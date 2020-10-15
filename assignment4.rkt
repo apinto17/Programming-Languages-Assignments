@@ -114,51 +114,56 @@
            (lambda () (subst-list (list (numC 2) (numC 3)) '(a) (binop '+ (idC 'a) (idC 'b)))))
 
 ;; Make sure id name is valid
-(define (checkId [s : Symbol]) : idC
+(define (check-id-name [s : Symbol]) : idC
   (cond [(hash-has-key? binOps s) (error "DXUQ3 Invalid identifier name")]
         [(symbol=? 'fundef s) (error "DXUQ3 Invalid identifier name")]
         [(symbol=? 'ifleq0 s) (error "DXUQ3 Invalid identifier name")]
         [else (idC s)]))
 
-(check-equal? (checkId 'x) (idC 'x))
-(check-equal? (checkId 'something) (idC 'something))
+(check-equal? (check-id-name 'x) (idC 'x))
+(check-equal? (check-id-name 'something) (idC 'something))
 (check-exn (regexp (regexp-quote "DXUQ3 Invalid identifier name"))
-           (lambda () (checkId '+)))
+           (lambda () (check-id-name '+)))
 (check-exn (regexp (regexp-quote "DXUQ3 Invalid identifier name"))
-           (lambda () (checkId 'fundef)))
+           (lambda () (check-id-name 'fundef)))
 (check-exn (regexp (regexp-quote "DXUQ3 Invalid identifier name"))
-           (lambda () (checkId 'ifleq0)))
+           (lambda () (check-id-name 'ifleq0)))
 
-;; Checks the argument names of the list
-(define (check-arguments [a : (Listof Symbol)]) : (Listof idC)
+;; Ensure argument's name is unique 
+(define (check-dup-symbol [toCheck : (Listof Symbol)] [s : Symbol] [seen : Boolean]) : Void
   (cond
-    [(empty? a) '()]
-    [else (cond
-            [(boolean? (check-all-args a)) (cons (checkId (first a)) (check-arguments (rest a)))])]))
+    [(equal? (first toCheck) s) (if seen
+                                    (error "DXUQ3 Duplicate identifier name")
+                                    (check-dup-symbol (rest toCheck) s #t))]
+    [else (check-dup-symbol (rest toCheck) s seen)]))
 
-(define (check-all-args [a : (Listof Symbol)]) : Boolean
+;(check-equal? (check-dup-symbol))
+
+;; Helper to check arg name and dup
+(define (check-arguments [toCheck : (Listof Symbol)] [args : (Listof Symbol)]) : (Listof idC)
   (cond
-    [empty? #T]
-    [else
-     (and (check-dups-args (rest a) (first a))
-          (check-all-args (rest a)))]))
+    [(empty? toCheck) '()]
+    [else (begin
+            (check-dup-symbol args (first toCheck) #f) 
+            (cons (check-id-name (first toCheck)) (check-arguments (rest toCheck) args)))]))
 
-(define (check-dups-args [a : (Listof Symbol)] [s : Symbol]) : Boolean
+;(check-equal? (check-arguments '(a) '(a)) (list (idC 'a)))
+;(check-equal? (check-arguments '(a b c) '(a b c)) (list (idC 'a) (idC 'b) (idC 'c)))
+;(check-exn (regexp (regexp-quote "DXUQ3 Invalid identifier name"))
+;           (lambda () (check-arguments '(a b /) '(a b /))))
+
+;; Top call to validate list of args
+(define (validate-arguments [args : (Listof Symbol)]) : (Listof idC)
+  (if args
+      (check-arguments args args)
+      '()))
+
+;; TODO REMOVE
+(define (PLACEHOLDER [s : (Listof Symbol)]) : (Listof idC)
   (cond
-    [(equal? (first a) s) (error "DXUQ3 Invalid identifier name")]
-    [(empty? a) #T]
-    [else (check-dups-args (rest a) s)]))
+    [(empty? s) '()]
+    [else (cons (idC (first s)) (PLACEHOLDER (rest s)))]))
 
-(check-all-args '(c a b c))
-(rest '(a b c c))
-(check-dups-args (rest '(c c c)) (first '(c c c)))
-
-(check-dups-args '(a b c) 'd)
-(check-equal? (check-arguments '()) '())
-(check-equal? (check-arguments '(a)) (list (idC 'a)))
-(check-equal? (check-arguments '(a b c)) (list (idC 'a) (idC 'b) (idC 'c)))
-(check-exn (regexp (regexp-quote "DXUQ3 Invalid identifier name"))
-           (lambda () (check-arguments '(a b /))))
 
 ;; Checks for duplicate function names
 (define (check-function-names [fds : (Listof FunDefC)] [f : FunDefC]) : (Listof FunDefC)
@@ -171,14 +176,14 @@
 (define (parse [s : Sexp]) : DXUQ3
   (match s
     [(? real?) (numC s)]
-    [(? symbol?) (checkId (cast s Symbol))]
+    [(? symbol?) (check-id-name (cast s Symbol))]
     [(list 'ifleq0 a b c) (ifleq0 (parse a) (parse b) (parse c))]
     [(list (? symbol? name) a ...)
      (if (hash-has-key? binOps name)
          (if (equal? (length a) 2)
              (binop name (parse (first a)) (parse (first (rest a))))
              (error "DXUQ3 Not a DXUQ3 expression"))
-         (appC (checkId name) (map (λ ([x : Sexp]) (parse x)) a)))]
+         (appC (check-id-name name) (map (λ ([x : Sexp]) (parse x)) a)))]
     [_ (error "DXUQ3 Not a DXUQ3 expression")]))
 
 (check-equal? (parse '1) (numC 1))
@@ -221,7 +226,7 @@
        (when (symbol=? (first n) 'main)
          (when (not (equal? (length n) 1))
            (error "DXUQ3 Main can't have an argument")))
-       (FunDefC (checkId (first n)) (check-arguments (rest n)) (parse b)))]
+       (FunDefC (check-id-name (first n)) (PLACEHOLDER (rest n)) (parse b)))]
     [_ (error "DXUQ3 Not a valid function")]))
 
 (check-equal? (parse-fundef '{fundef {main} 1})
