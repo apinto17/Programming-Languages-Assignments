@@ -1,5 +1,3 @@
-;; ALL DONE
-
 #lang typed/racket
 
 (require typed/rackunit)
@@ -30,6 +28,15 @@
   #:transparent)
 
 (define-type DXUQ3 (U numC ifleq0 binop appC idC))
+
+;; Environment
+(struct BindingC ([name : Symbol]
+                  [val : Number])
+  #:transparent)
+ 
+(define-type-alias EnvC (Listof BindingC))
+(define mt-env empty)
+(define extend-env cons)
 
 ;; Given a op symbol, returns the op
 (define binOps (make-immutable-hash
@@ -134,8 +141,8 @@
   (cond
     [(empty? in) #t]
     [(equal? (first in) what) (if seen
-                                    (error "DXUQ3 Duplicate identifier name")
-                                    (check-dup-symbol (rest in) what #t))]
+                                  (error "DXUQ3 Duplicate identifier name")
+                                  (check-dup-symbol (rest in) what #t))]
     [else (when (rest in) (check-dup-symbol (rest in) what seen))]))
 
 (check-equal? (check-dup-symbol '() 'a #f) #t)
