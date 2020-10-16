@@ -12,7 +12,6 @@ Values
     Reals, Booleans, Strings, Closures, and Primitive ops
         PrimOps: + - * / <= equal?
 
-Environment instead of subst
 Serialization
     see ~v
 No more function names
@@ -25,3 +24,5 @@ Re-organize code according to feedback given
     Move test cases to the end of file
     Important data definitions first, followed by important functions
 Update errors to display incorrect program text
+
+Mismatch args and exprs in bind error?
