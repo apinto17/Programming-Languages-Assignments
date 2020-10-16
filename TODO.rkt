@@ -20,12 +20,8 @@ No more function names
 -------------SMALL TASKS-------------
 Update interp to call interp-binop helper function
     Check is numbers are numV
-Write test for check-function-names
 All done indication at the top
 Re-organize code according to feedback given
     Move test cases to the end of file
     Important data definitions first, followed by important functions
-binop->binopC
-ifleq0->ifC
 Update errors to display incorrect program text
-DXUQ3->4
