@@ -273,17 +273,20 @@
 (define (interp [a : DXUQ4] [env : (Listof BindingC)] [fds : (Listof FunDefC)]) : Real
   (match a
     [(numC n) n]
-    [(binop op l r) (if (equal? (getBinOp op) /)
-                        (if (zero? (interp r env fds))
-                            (error "DXUQ4 Division by zero")
-                            ((getBinOp op) (interp l env fds) (interp r env fds)))
-                        ((getBinOp op) (interp l env fds) (interp r env fds)))]
+    [(binop op l r) (interp-binop a env fds)]
     [(ifC arg t f) (if (positive? (interp arg env fds))
                        (interp f env fds)
                        (interp t env fds))]
     [(appC f args) (let ([fd : FunDefC (get-fundef (idC-s f) fds)])
                      (interp (FunDefC-body fd) (bind-arguments (FunDefC-args fd) (interp-args args env fds)) fds))]
     [(idC s) (lookup s env)]))
+
+(define (interp-binop [a : binop] [env : (Listof BindingC)] [fds : (Listof FunDefC)]) : Real
+  (if (equal? (getBinOp (binop-op a)) /)
+      (if (zero? (interp (binop-r a) env fds))
+          (error "DXUQ4 Division by zero")
+          ((getBinOp (binop-op a)) (interp (binop-l a) env fds) (interp (binop-r a) env fds)))
+      ((getBinOp (binop-op a)) (interp (binop-l a) env fds) (interp (binop-r a) env fds))))
 
 ;; Interpret list of DXUQ4 Expressions
 (define (interp-args [args : (Listof DXUQ4)] [env : (Listof BindingC)] [fds : (Listof FunDefC)]) : (Listof Real)

@@ -12,17 +12,18 @@ Values
     Reals, Booleans, Strings, Closures, and Primitive ops
         PrimOps: + - * / <= equal?
 
+Values
 Serialization
     see ~v
 No more function names
 
 -------------SMALL TASKS-------------
-Update interp to call interp-binop helper function
-    Check is numbers are numV
+Check numbers are numV in binop
 All done indication at the top
 Re-organize code according to feedback given
     Move test cases to the end of file
     Important data definitions first, followed by important functions
-Update errors to display incorrect program text
+Update errors to display incorrect serialized data
+Tests for helper functions that are missing
 
 Mismatch args and exprs in bind error?
