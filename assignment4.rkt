@@ -22,19 +22,30 @@
 (struct appC([fun : idC]
              [args : (Listof DXUQ4)])
   #:transparent)
-(struct FunDefC ([name : idC]
+(struct funDefC ([name : idC]
                  [args : (Listof idC)]
                  [body : DXUQ4])
   #:transparent)
 
 (define-type DXUQ4 (U numC ifC binop appC idC))
 
+;; Values
+(struct numV ([n : Real])
+  #:transparent)
+(struct boolV ([b : Boolean])
+  #:transparent)
+
+(define-type valC (U numV boolV))
+
 ;; Environment
 (struct BindingC ([name : Symbol]
-                  [val : Real])
+                  [val : valC])
   #:transparent)
  
-(define mt-env empty)
+(define mt-env
+  (list (BindingC 'true (boolV #t))
+        (BindingC 'false (boolV #f))))
+
 (define extend-env cons)
 
 ;; Given a op symbol, returns the op
@@ -60,40 +71,40 @@
            (lambda () (getBinOp 'a)))
 
 ;; Gets function body from list of fds
-(define (get-fundef [n : Symbol] [fds : (Listof FunDefC)]) : FunDefC
+(define (get-fundef [n : Symbol] [fds : (Listof funDefC)]) : funDefC
   (cond
     [(empty? fds) (error "DXUQ4 Reference to undefined function")]
     [(cons? fds) (cond
-                   [(equal? n (idC-s (FunDefC-name (first fds)))) (first fds)]
+                   [(equal? n (idC-s (funDefC-name (first fds)))) (first fds)]
                    [else (get-fundef n (rest fds))])]))
 
-(check-equal? (get-fundef 'a (list (FunDefC (idC 'a) (list (idC 'x)) (numC 2))))
-              (FunDefC (idC 'a) (list (idC 'x)) (numC 2)))
-(check-equal? (get-fundef 'b (list (FunDefC (idC 'a) (list (idC 'x)) (numC 2))
-                                   (FunDefC (idC 'b) (list (idC 'y) (idC 'z)) (numC 3))))
-              (FunDefC (idC 'b) (list (idC 'y) (idC 'z)) (numC 3)))
-(check-equal? (get-fundef 'c (list (FunDefC (idC 'a) '() (numC 2))
-                                   (FunDefC (idC 'b) (list (idC 'x)) (numC 3))
-                                   (FunDefC (idC 'c) '() (numC 4))))
-              (FunDefC (idC 'c) '() (numC 4)))
+(check-equal? (get-fundef 'a (list (funDefC (idC 'a) (list (idC 'x)) (numC 2))))
+              (funDefC (idC 'a) (list (idC 'x)) (numC 2)))
+(check-equal? (get-fundef 'b (list (funDefC (idC 'a) (list (idC 'x)) (numC 2))
+                                   (funDefC (idC 'b) (list (idC 'y) (idC 'z)) (numC 3))))
+              (funDefC (idC 'b) (list (idC 'y) (idC 'z)) (numC 3)))
+(check-equal? (get-fundef 'c (list (funDefC (idC 'a) '() (numC 2))
+                                   (funDefC (idC 'b) (list (idC 'x)) (numC 3))
+                                   (funDefC (idC 'c) '() (numC 4))))
+              (funDefC (idC 'c) '() (numC 4)))
 (check-exn (regexp (regexp-quote "DXUQ4 Reference to undefined function"))
            (lambda () (get-fundef 'a '())))
 (check-exn (regexp (regexp-quote "DXUQ4 Reference to undefined function"))
-           (lambda () (get-fundef 'a (list (FunDefC (idC 'b) (list (idC 'x) (idC 'a)) (numC 2))))))
+           (lambda () (get-fundef 'a (list (funDefC (idC 'b) (list (idC 'x) (idC 'a)) (numC 2))))))
 
 ;; Get symbol from env
-(define (lookup [s : Symbol] [env : (Listof BindingC)]) : Real
+(define (lookup [s : Symbol] [env : (Listof BindingC)]) : valC
   (cond
     [(empty? env) (error "DXUQ4 Unbound identifier")]
     [(equal? s (BindingC-name (first env))) (BindingC-val (first env))]
     [else (lookup s (rest env))]))
 
-(check-equal? (lookup 'a (list (BindingC 'a 4))) 4)
-(check-equal? (lookup 'b (list (BindingC 'a 4) (BindingC 'b 5))) 5)
+(check-equal? (lookup 'a (list (BindingC 'a (numV 4)))) (numV 4))
+(check-equal? (lookup 'b (list (BindingC 'a (numV 4)) (BindingC 'b (numV 5)))) (numV 5))
 (check-exn (regexp (regexp-quote "DXUQ4 Unbound identifier"))
            (lambda () (lookup 'a '())))
 (check-exn (regexp (regexp-quote "DXUQ4 Unbound identifier"))
-           (lambda () (lookup 'a (list (BindingC 'b 4)))))
+           (lambda () (lookup 'a (list (BindingC 'b (numV 4))))))
 
 ;; Make sure id name is valid
 (define (check-id-name [s : Symbol]) : idC
@@ -161,11 +172,20 @@
            (lambda () (validate-arguments '(a b b))))
 
 ;; Checks for duplicate function names
-(define (check-function-names [fds : (Listof FunDefC)] [f : FunDefC]) : (Listof FunDefC)
+(define (check-function-names [fds : (Listof funDefC)] [f : funDefC]) : (Listof funDefC)
   (cond
     [(empty? fds) '()]
-    [(equal? (idC-s (FunDefC-name (first fds))) (idC-s (FunDefC-name f))) (error "DXUQ4 Not a valid function")]
+    [(equal? (idC-s (funDefC-name (first fds))) (idC-s (funDefC-name f))) (error "DXUQ4 Not a valid function")]
     [else  (cons (first fds) (check-function-names (rest fds) f))]))
+
+;; Returns String representation of DXUQ4
+(define (serialize [what : valC]) : String
+  (match what
+    [(numV n) (~v n)]
+    [(boolV b) (~v b)]))
+
+(check-equal? (serialize (numV 4)) "4")
+(check-equal? (serialize (boolV #t)) "#t")
 
 ;; Parse Sexp into DXUQ4 expression
 (define (parse [s : Sexp]) : DXUQ4
@@ -213,27 +233,27 @@
 (check-exn (regexp (regexp-quote "DXUQ4 Not a DXUQ4 expression"))
            (lambda () (parse '((((((())))))))))
 
-;; Create FunDefC from Sexp
-(define (parse-fundef [s : Sexp]) : FunDefC
+;; Create funDefC from Sexp
+(define (parse-fundef [s : Sexp]) : funDefC
   (match s
     [(list 'fundef (list (? symbol? n) ...) b)
      (let ([n : (Listof Symbol) (cast n (Listof Symbol))])
        (when (symbol=? (first n) 'main)
          (when (not (equal? (length n) 1))
            (error "DXUQ4 Main can't have an argument")))
-       (FunDefC (check-id-name (first n)) (validate-arguments (rest n)) (parse b)))]
+       (funDefC (check-id-name (first n)) (validate-arguments (rest n)) (parse b)))]
     [_ (error "DXUQ4 Not a valid function")]))
 
 (check-equal? (parse-fundef '{fundef {main} 1})
-              (FunDefC (idC 'main) '() (numC 1)))
+              (funDefC (idC 'main) '() (numC 1)))
 (check-equal? (parse-fundef '{fundef {main} (func 1 2 3)})
-              (FunDefC (idC 'main) '() (appC (idC 'func) (list (numC 1) (numC 2) (numC 3)))))
+              (funDefC (idC 'main) '() (appC (idC 'func) (list (numC 1) (numC 2) (numC 3)))))
 (check-equal? (parse-fundef '{fundef {name x} 1})
-              (FunDefC (idC 'name) (list (idC 'x)) (numC 1)))
+              (funDefC (idC 'name) (list (idC 'x)) (numC 1)))
 (check-equal? (parse-fundef '{fundef {addone x y} {+ x y}})
-              (FunDefC (idC 'addone) (list (idC 'x) (idC 'y)) (binop '+ (idC 'x) (idC 'y))))
+              (funDefC (idC 'addone) (list (idC 'x) (idC 'y)) (binop '+ (idC 'x) (idC 'y))))
 (check-equal? (parse-fundef '{fundef {addone x y z} {+ x (* 3 x)}})
-              (FunDefC (idC 'addone) (list (idC 'x) (idC 'y) (idC 'z))
+              (funDefC (idC 'addone) (list (idC 'x) (idC 'y) (idC 'z))
                        (binop '+ (idC 'x) (binop '* (numC 3) (idC 'x)))))
 
 (check-exn (regexp (regexp-quote "DXUQ4 Not a valid function"))
@@ -242,7 +262,7 @@
            (lambda () (parse-fundef '{fundef {main x} {+ x 1}})))
 
 ;; Get list of function defs from sexp
-(define (parse-prog [s : Sexp]) : (Listof FunDefC)
+(define (parse-prog [s : Sexp]) : (Listof funDefC)
   (cond
     [(empty? s) '()]
     [(list? s) (cons (parse-fundef (first s))
@@ -251,14 +271,14 @@
 
 (check-equal? (parse-prog '()) '())
 (check-equal? (parse-prog '{{fundef {f x} 14}})
-              (list (FunDefC (idC 'f) (list (idC 'x)) (numC 14))))
+              (list (funDefC (idC 'f) (list (idC 'x)) (numC 14))))
 (check-equal? (parse-prog '{{fundef {f x y z} 14}})
-              (list (FunDefC (idC 'f) (list (idC 'x) (idC 'y) (idC 'z)) (numC 14))))
+              (list (funDefC (idC 'f) (list (idC 'x) (idC 'y) (idC 'z)) (numC 14))))
 (check-equal? (parse-prog '{{fundef {f x} {+ x 14}}})
-              (list (FunDefC (idC 'f) (list (idC 'x)) (binop '+ (idC 'x) (numC 14)))))
+              (list (funDefC (idC 'f) (list (idC 'x)) (binop '+ (idC 'x) (numC 14)))))
 (check-equal? (parse-prog '{{fundef {f x y} {+ x 14}} {fundef {main} {f 2}}})
-              (list (FunDefC (idC 'f) (list (idC 'x) (idC 'y)) (binop '+ (idC 'x) (numC 14)))
-                    (FunDefC (idC 'main) '() (appC (idC 'f) (list (numC 2))))))
+              (list (funDefC (idC 'f) (list (idC 'x) (idC 'y)) (binop '+ (idC 'x) (numC 14)))
+                    (funDefC (idC 'main) '() (appC (idC 'f) (list (numC 2))))))
 
 (check-exn (regexp (regexp-quote "DXUQ4 Not a valid function"))
            (lambda () (parse-prog '{{fundef {f x} 14} {fundef {f x} 14}})))
@@ -270,58 +290,68 @@
            (lambda () (parse-prog '{{fundef {main x} {+ x 14}}})))
 
 ;; Interpret DXUQ4 expressions
-(define (interp [a : DXUQ4] [env : (Listof BindingC)] [fds : (Listof FunDefC)]) : Real
+(define (interp [a : DXUQ4] [env : (Listof BindingC)] [fds : (Listof funDefC)]) : valC
   (match a
-    [(numC n) n]
+    [(numC n) (numV n)]
     [(binop op l r) (interp-binop a env fds)]
-    [(ifC arg t f) (if (positive? (interp arg env fds))
-                       (interp f env fds)
-                       (interp t env fds))]
-    [(appC f args) (let ([fd : FunDefC (get-fundef (idC-s f) fds)])
-                     (interp (FunDefC-body fd) (bind-arguments (FunDefC-args fd) (interp-args args env fds)) fds))]
+    [(ifC arg t f) (interp-if a env fds)]
+    [(appC f args) (interp-app a env fds)]
     [(idC s) (lookup s env)]))
 
-(define (interp-binop [a : binop] [env : (Listof BindingC)] [fds : (Listof FunDefC)]) : Real
-  (if (equal? (getBinOp (binop-op a)) /)
-      (if (zero? (interp (binop-r a) env fds))
+(define (interp-binop [a : binop] [env : (Listof BindingC)] [fds : (Listof funDefC)]) : numV
+  (if (and (numV? (interp (binop-l a) env fds)) (numV? (interp (binop-r a) env fds)))
+      (if (and (equal? (getBinOp (binop-op a)) /)
+               (zero? (numV-n (cast (interp (binop-r a) env fds) numV))))
           (error "DXUQ4 Division by zero")
-          ((getBinOp (binop-op a)) (interp (binop-l a) env fds) (interp (binop-r a) env fds)))
-      ((getBinOp (binop-op a)) (interp (binop-l a) env fds) (interp (binop-r a) env fds))))
+          (numV ((getBinOp (binop-op a)) (numV-n (cast  (interp (binop-l a) env fds) numV))
+                                         (numV-n (cast (interp (binop-r a) env fds) numV)))))
+      (error "DXUQ4 binop doesn't have real operands")))
+
+(define (interp-if [a : ifC] [env : (Listof BindingC)] [fds : (Listof funDefC)]) : valC
+  (if (and (numV? (interp (ifC-arg a) env fds)) (numV? (interp (ifC-t a) env fds)) (numV? (interp (ifC-f a) env fds)))
+      (if (positive? (numV-n (cast (interp (ifC-arg a) env fds) numV)))
+          (interp (ifC-f a) env fds)
+          (interp (ifC-t a) env fds))
+      (error "DXUQ4 if doesn't have real operands")))
+
+(define (interp-app [a : appC] [env : (Listof BindingC)] [fds : (Listof funDefC)]) : valC
+  (let ([fd : funDefC (get-fundef (idC-s (appC-fun a)) fds)])
+    (interp (funDefC-body fd) (bind-arguments (funDefC-args fd) (interp-args (appC-args a) env fds)) fds)))
 
 ;; Interpret list of DXUQ4 Expressions
-(define (interp-args [args : (Listof DXUQ4)] [env : (Listof BindingC)] [fds : (Listof FunDefC)]) : (Listof Real)
+(define (interp-args [args : (Listof DXUQ4)] [env : (Listof BindingC)] [fds : (Listof funDefC)]) : (Listof valC)
   (cond
     [(empty? args) '()]
     [else (cons (interp (first args) env fds) (interp-args (rest args) env fds))]))
 
 ;; Bind arguments in the environment
-(define (bind-arguments [args : (Listof idC)] [vals : (Listof Real)]) : (Listof BindingC)
+(define (bind-arguments [args : (Listof idC)] [vals : (Listof valC)]) : (Listof BindingC)
   (cond
     [(empty? args) '()]
     [else (extend-env (BindingC (idC-s (first args)) (first vals)) (bind-arguments (rest args) (rest vals)))]))
 
-(check-equal? (interp (numC 4) mt-env '()) 4)
-(check-equal? (interp (binop '+ (numC 2) (numC 3)) mt-env '()) 5)
-(check-equal? (interp (binop '- (numC 2) (numC 3)) mt-env '()) -1)
-(check-equal? (interp (binop '* (numC 2) (numC 3)) mt-env '()) 6)
-(check-equal? (interp (binop '/ (numC 4) (numC 2)) mt-env '()) 2)
-(check-equal? (interp (ifC (numC 0) (numC 2) (numC 3)) mt-env '()) 2)
-(check-equal? (interp (ifC (numC 1) (numC 2) (numC 3)) mt-env '()) 3)
+(check-equal? (interp (numC 4) mt-env '()) (numV 4))
+(check-equal? (interp (binop '+ (numC 2) (numC 3)) mt-env '()) (numV 5))
+(check-equal? (interp (binop '- (numC 2) (numC 3)) mt-env '()) (numV -1))
+(check-equal? (interp (binop '* (numC 2) (numC 3)) mt-env '()) (numV 6))
+(check-equal? (interp (binop '/ (numC 4) (numC 2)) mt-env '()) (numV 2))
+(check-equal? (interp (ifC (numC 0) (numC 2) (numC 3)) mt-env '()) (numV 2))
+(check-equal? (interp (ifC (numC 1) (numC 2) (numC 3)) mt-env '()) (numV 3))
 
-(check-equal? (interp (binop '* (numC -1) (binop '+ (numC 2) (numC 1))) mt-env '()) -3)
-(check-equal? (interp (binop '+ (binop '+ (numC 2) (numC 1)) (numC 2)) mt-env '()) 5)
-(check-equal? (interp (binop '- (numC 2) (binop '- (numC 2) (numC 1))) mt-env '()) 1)
-(check-equal? (interp (binop '* (numC 1) (binop '/ (numC 4) (numC 2))) mt-env '()) 2)
-(check-equal? (interp (binop '/ (binop '- (numC 4) (numC 0)) (numC 4)) mt-env '()) 1)
+(check-equal? (interp (binop '* (numC -1) (binop '+ (numC 2) (numC 1))) mt-env '()) (numV -3))
+(check-equal? (interp (binop '+ (binop '+ (numC 2) (numC 1)) (numC 2)) mt-env '()) (numV 5))
+(check-equal? (interp (binop '- (numC 2) (binop '- (numC 2) (numC 1))) mt-env '()) (numV 1))
+(check-equal? (interp (binop '* (numC 1) (binop '/ (numC 4) (numC 2))) mt-env '()) (numV 2))
+(check-equal? (interp (binop '/ (binop '- (numC 4) (numC 0)) (numC 4)) mt-env '()) (numV 1))
 (check-equal? (interp (ifC (binop '- (numC 1) (numC 1))
-                           (binop '* (numC 1) (numC 1)) (numC 3)) mt-env '()) 1)
+                           (binop '* (numC 1) (numC 1)) (numC 3)) mt-env '()) (numV 1))
 
 (check-equal? (interp (appC (idC 'name) (list (numC 2) (numC 1))) mt-env
-                      (list (FunDefC (idC 'name) (list (idC 'x) (idC 'y)) (binop '+ (idC 'x) (idC 'y))))) 3)
+                      (list (funDefC (idC 'name) (list (idC 'x) (idC 'y)) (binop '+ (idC 'x) (idC 'y))))) (numV 3))
 (check-equal? (interp (appC (idC 'name) (list (numC 2))) mt-env
-                      (list (FunDefC (idC 'name) (list (idC 'x)) (binop '+ (idC 'x) (idC 'x))))) 4)
+                      (list (funDefC (idC 'name) (list (idC 'x)) (binop '+ (idC 'x) (idC 'x))))) (numV 4))
 (check-equal? (interp (appC (idC 'name) (list (binop '+ (numC 2) (numC 2)))) mt-env
-                      (list (FunDefC (idC 'name) (list (idC 'x)) (binop '+ (idC 'x) (idC 'x))))) 8)
+                      (list (funDefC (idC 'name) (list (idC 'x)) (binop '+ (idC 'x) (idC 'x))))) (numV 8))
 (check-exn (regexp (regexp-quote "DXUQ4 Unbound identifier"))
            (lambda () (interp (idC 'something) mt-env '())))
 (check-exn (regexp (regexp-quote "DXUQ4 Division by zero"))
@@ -330,37 +360,37 @@
            (lambda () (interp (binop '/ (numC 4) (binop '- (numC 4) (numC 4))) mt-env '())))
 
 ;; Interpret main
-(define (interp-fns [fds : (Listof FunDefC)]) : Real
+(define (interp-fns [fds : (Listof funDefC)]) : valC
   (interp (appC (idC 'main) '()) mt-env fds))
 
-(check-equal? (interp-fns (list (FunDefC (idC 'main) '() (numC 14)))) 14)
-(check-equal? (interp-fns (list (FunDefC (idC 'main) '() (appC (idC 'f) (list (numC 2))))
-                                (FunDefC (idC 'f) (list (idC 'x)) (binop '+ (idC 'x) (numC 2))))) 4)
-(check-equal? (interp-fns (list (FunDefC (idC 'main) '() (appC (idC 'f) (list (numC 2) (numC 3))))
-                                (FunDefC (idC 'f) (list (idC 'x) (idC 'y)) (binop '* (idC 'x) (idC 'y))))) 6)
+(check-equal? (interp-fns (list (funDefC (idC 'main) '() (numC 14)))) (numV 14))
+(check-equal? (interp-fns (list (funDefC (idC 'main) '() (appC (idC 'f) (list (numC 2))))
+                                (funDefC (idC 'f) (list (idC 'x)) (binop '+ (idC 'x) (numC 2))))) (numV 4))
+(check-equal? (interp-fns (list (funDefC (idC 'main) '() (appC (idC 'f) (list (numC 2) (numC 3))))
+                                (funDefC (idC 'f) (list (idC 'x) (idC 'y)) (binop '* (idC 'x) (idC 'y))))) (numV 6))
 (check-exn (regexp (regexp-quote "DXUQ4 Reference to undefined function"))
            (lambda () (interp-fns (list
-                                   (FunDefC (idC 'a) (list (idC 'init)) (appC (idC 'f) (list (numC 2))))
-                                   (FunDefC (idC 'f) (list (idC 'x)) (binop '+ (idC 'x) (numC 2)))))))
+                                   (funDefC (idC 'a) (list (idC 'init)) (appC (idC 'f) (list (numC 2))))
+                                   (funDefC (idC 'f) (list (idC 'x)) (binop '+ (idC 'x) (numC 2)))))))
 
 ;; Parse and interpret DXUQ4-formatted Sexp
-(define (top-interp [s : Sexp]) : Real
-  (interp-fns (parse-prog s)))
+(define (top-interp [s : Sexp]) : String
+  (serialize (interp-fns (parse-prog s))))
 
 (check-equal? (top-interp '{{fundef {main} {addtwo 0}}
                             {fundef {addtwo x} (+ {addone x} {addone x})}
-                            {fundef {addone y} (+ y 1)}}) 2)
+                            {fundef {addone y} (+ y 1)}}) "2")
 (check-equal? (top-interp '{{fundef {main} {something 0}}
                             {fundef {something x} (ifC x {truthy x} {falsy x})}
                             {fundef {truthy y} (+ y 10)}
-                            {fundef {falsy z} (+ z 50)}}) 10)
-(check-equal? (top-interp '{{fundef {main} (ifC -3 (+ 4 5) (+ 2 9))}}) 9)
+                            {fundef {falsy z} (+ z 50)}}) "10")
+(check-equal? (top-interp '{{fundef {main} (ifC -3 (+ 4 5) (+ 2 9))}}) "9")
 (check-equal? (top-interp '{{fundef {main} {addtwo 1 1}}
                             {fundef {addtwo x y} (+ {addone x} {addone y})}
-                            {fundef {addone y} (+ y 1)}}) 4)
+                            {fundef {addone y} (+ y 1)}}) "4")
 
-(check-equal? (top-interp '{{fundef {main} (something)} {fundef {something} 11}}) 11)
-(check-equal? (top-interp '{{fundef {main} (something 1 2 3)} {fundef {something a b c} (+ a (+ b c))}}) 6)
+(check-equal? (top-interp '{{fundef {main} (something)} {fundef {something} 11}}) "11")
+(check-equal? (top-interp '{{fundef {main} (something 1 2 3)} {fundef {something a b c} (+ a (+ b c))}}) "6")
 
 
 "DONE"

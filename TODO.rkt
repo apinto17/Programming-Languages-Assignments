@@ -12,7 +12,6 @@ Values
     Reals, Booleans, Strings, Closures, and Primitive ops
         PrimOps: + - * / <= equal?
 
-Values
 Serialization
     see ~v
 No more function names
