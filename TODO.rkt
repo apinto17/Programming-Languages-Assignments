@@ -27,3 +27,4 @@ Update errors to display incorrect serialized data
 Tests for helper functions that are missing
 
 Mismatch args and exprs in bind error?
+Update validate args to get called during lamC parsing

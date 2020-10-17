@@ -22,10 +22,6 @@
 (struct appC([body : DXUQ4]
              [args : (Listof DXUQ4)])
   #:transparent)
-(struct funDefC ([name : idC]
-                 [args : (Listof idC)]
-                 [body : DXUQ4])
-  #:transparent)
 (struct lamC ([args : (Listof Symbol)]
               [body : DXUQ4])
   #:transparent)
@@ -172,7 +168,7 @@
   (match s
     [(? real?) (numC s)]
     [(? symbol?) (check-id-name (cast s Symbol))]
-    [(list 'ifC a b c) (ifC (parse a) (parse b) (parse c))]
+    [(list 'if a b c) (ifC (parse a) (parse b) (parse c))]
     [(list 'fn (list (? symbol? args) ...) b)
      (lamC (cast args (Listof Symbol)) (parse b))]
     [(list (? symbol? name) a ...)
@@ -188,7 +184,7 @@
 (check-equal? (parse '(- 2 1)) (binop '- (numC 2) (numC 1)))
 (check-equal? (parse '(* 1 2)) (binop '* (numC 1) (numC 2)))
 (check-equal? (parse '(/ 2 4)) (binop '/ (numC 2) (numC 4)))
-(check-equal? (parse '(ifC 0 2 3)) (ifC (numC 0) (numC 2) (numC 3)))
+(check-equal? (parse '(if 0 2 3)) (ifC (numC 0) (numC 2) (numC 3)))
 
 (check-equal? (parse '(+ (+ 2 1) 2))
               (binop '+ (binop '+ (numC 2) (numC 1)) (numC 2)))
@@ -198,7 +194,7 @@
               (binop '* (numC 1) (binop '/ (numC 4) (numC 2))))
 (check-equal? (parse '(/ (- 4 0) 4))
               (binop '/ (binop '- (numC 4) (numC 0)) (numC 4)))
-(check-equal? (parse '(ifC (- 1 1) (* 1 1) 3))
+(check-equal? (parse '(if (- 1 1) (* 1 1) 3))
               (ifC (binop '- (numC 1) (numC 1))
                    (binop '* (numC 1) (numC 1)) (numC 3)))
 
@@ -249,20 +245,11 @@
   (let ([body : valC (interp (appC-body a) env)])
     (cond
       [(numV? body) body]
-      [(cloV? body)(interp (cloV-body body) env)]
+      [(cloV? body)(interp (cloV-body body)
+                           (append env (map (λ ([s : Symbol] [v : DXUQ4])
+                                              (Binding s (interp v env)))
+                                            (cloV-args body) (appC-args a))))]
       [else (error "DXUQ4 Couldn't apply function")])))
-
-;; Interpret list of DXUQ4 Expressions
-(define (interp-args [args : (Listof DXUQ4)] [env : (Listof Binding)]) : (Listof valC)
-  (cond
-    [(empty? args) '()]
-    [else (cons (interp (first args) env) (interp-args (rest args) env))]))
-
-;; Bind arguments in the environment
-(define (bind-arguments [args : (Listof idC)] [vals : (Listof valC)]) : (Listof Binding)
-  (cond
-    [(empty? args) '()]
-    [else (extend-env (Binding (idC-s (first args)) (first vals)) (bind-arguments (rest args) (rest vals)))]))
 
 (check-equal? (interp (numC 4) mt-env) (numV 4))
 (check-equal? (interp (binop '+ (numC 2) (numC 3)) mt-env) (numV 5))
@@ -280,24 +267,22 @@
 (check-equal? (interp (ifC (binop '- (numC 1) (numC 1))
                            (binop '* (numC 1) (numC 1)) (numC 3)) mt-env) (numV 1))
 
+(check-equal? (interp (appC (lamC '() (binop '+ (numC 2) (numC 1))) '()) mt-env) (numV 3))
 (check-equal? (interp (appC (lamC '(a b) (appC (binop '+ (idC 'a) (idC 'b)) (list (idC 'a) (idC 'b))))
-                            (list (numC 1) (numC 2)))
-                      (list (Binding 'a (numV 1))
-                            (Binding 'b (numV 2))))
-              (numV 3))
-;(check-equal? (interp (appC (binop '+ (idC 'x) (idC 'y)) (list (numC 2) (numC 1)))
-;                                  (list (Binding 'x (numV 2))
-;                                        (Binding 'y (numV 1)))) (numV 3))
-;(check-equal? (interp (appC (idC 'name) (list (numC 2))) mt-env
-;                      (list (funDefC (idC 'name) (list (idC 'x)) (binop '+ (idC 'x) (idC 'x))))) (numV 4))
-;(check-equal? (interp (appC (idC 'name) (list (binop '+ (numC 2) (numC 2)))) mt-env
-;                      (list (funDefC (idC 'name) (list (idC 'x)) (binop '+ (idC 'x) (idC 'x))))) (numV 8))
-;(check-exn (regexp (regexp-quote "DXUQ4 Unbound identifier"))
-;           (lambda () (interp (idC 'something) mt-env '())))
-;(check-exn (regexp (regexp-quote "DXUQ4 Division by zero"))
-;           (lambda () (interp (binop '/ (numC 4) (numC 0)) mt-env '())))
-;(check-exn (regexp (regexp-quote "DXUQ4 Division by zero"))
-;           (lambda () (interp (binop '/ (numC 4) (binop '- (numC 4) (numC 4))) mt-env '())))
+                            (list (numC 1) (numC 2))) mt-env) (numV 3))
+(check-equal? (interp (appC (lamC '(a b) (appC (binop '+ (idC 'a) (idC 'b)) (list (idC 'a) (idC 'b))))
+                            (list (binop '+ (numC 1) (numC 2)) (numC 2))) mt-env) (numV 5))
+(check-equal? (interp (appC (lamC '(a) (appC (lamC '(a) (appC (idC 'a)
+                                                              (list (numC 1))))
+                                             (list (numC 2))))
+                            (list (numC 3))) mt-env) (numV 3))
+
+(check-exn (regexp (regexp-quote "DXUQ4 Unbound identifier"))
+           (lambda () (interp (idC 'something) mt-env)))
+(check-exn (regexp (regexp-quote "DXUQ4 Division by zero"))
+           (lambda () (interp (binop '/ (numC 4) (numC 0)) mt-env)))
+(check-exn (regexp (regexp-quote "DXUQ4 Division by zero"))
+           (lambda () (interp (binop '/ (numC 4) (binop '- (numC 4) (numC 4))) mt-env)))
 
 ;; Parse and interpret DXUQ4-formatted Sexp
 (define (top-interp [s : Sexp]) : String
