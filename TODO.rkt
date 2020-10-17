@@ -1,7 +1,6 @@
 #lang scribble/manual
 
-check-id update
-    can't be let, in, if, or fn
+
 
 -------------LANGUAGE UPDATE-------------
 String data type
@@ -12,12 +11,14 @@ Values
     Reals, Booleans, Strings, Closures, and Primitive ops
         PrimOps: + - * / <= equal?
 
-Serialization
-    see ~v
-No more function names
+4.3 Dump Binops
+4.4 Booleans and comparisons
+4.5 Conditionals
+5 Let
+    check-id update
+        can't be let, in
 
 -------------SMALL TASKS-------------
-Check numbers are numV in binop
 All done indication at the top
 Re-organize code according to feedback given
     Move test cases to the end of file
