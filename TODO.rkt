@@ -1,14 +1,11 @@
 #lang scribble/manual
 
-
-
 -------------LANGUAGE UPDATE-------------
 String data type
 (let (id = expr) ... in Expr
-(fn (id ...) expr)
 (expr expr...)
 Values
-    Reals, Booleans, Strings, Closures, and Primitive ops
+   Strings, and Primitive ops
         PrimOps: + - * / <= equal?
 
 4.3 Dump Binops
@@ -23,8 +20,10 @@ All done indication at the top
 Re-organize code according to feedback given
     Move test cases to the end of file
     Important data definitions first, followed by important functions
+
 Update errors to display incorrect serialized data
 Tests for helper functions that are missing
+Tests for errors/uncovered code
 
 Mismatch args and exprs in bind error?
-Update validate args to get called during lamC parsing
+Update validate args to get called during parsing?
