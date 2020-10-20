@@ -51,9 +51,7 @@
         (Binding '+ (primV '+))
         (Binding '* (primV '*))
         (Binding '- (primV '-))
-        (Binding '/ (primV '/))
-        (Binding '<= (primV '<=))
-        (Binding 'equal? (primV 'equal?))))
+        (Binding '/ (primV '/))))
 
 ;; Get symbol from env
 (define (lookup [s : Symbol] [env : (Listof Binding)]) : valC
@@ -165,7 +163,7 @@
 (check-equal? (parse '(- 2 1)) (appC (idC '-) (list (numC 2) (numC 1))))
 (check-equal? (parse '(* 1 2)) (appC (idC '*) (list (numC 1) (numC 2))))
 (check-equal? (parse '(/ 2 4)) (appC (idC '/) (list (numC 2) (numC 4))))
-(check-equal? (parse '(if (equal? 1 1) 2 3)) (ifC (appC (idC 'equal?) (list (numC 1) (numC 1))) (numC 2) (numC 3)))
+(check-equal? (parse '(if 0 2 3)) (ifC (numC 0) (numC 2) (numC 3)))
 
 (check-equal? (parse '(+ (+ 2 1) 2))
               (appC (idC '+) (list (appC (idC '+) (list (numC 2) (numC 1))) (numC 2))))
@@ -175,8 +173,8 @@
               (appC (idC '*) (list (numC 1) (appC (idC '/) (list (numC 4) (numC 2))))))
 (check-equal? (parse '(/ (- 4 0) 4))
               (appC (idC '/) (list (appC (idC '-) (list (numC 4) (numC 0))) (numC 4))))
-(check-equal? (parse '(if (equal? 1 0) (* 1 1) 3))
-              (ifC (appC (idC 'equal?) (list (numC 1) (numC 1)))
+(check-equal? (parse '(if (- 1 1) (* 1 1) 3))
+              (ifC (appC (idC '-) (list (numC 1) (numC 1)))
                    (appC (idC '*) (list (numC 1) (numC 1))) (numC 3)))
 
 (check-equal? (parse 'something) (idC 'something))
@@ -204,11 +202,11 @@
     [(lamC args b) (cloV args b env)]))
 
 (define (interp-if [a : ifC] [env : (Listof Binding)]) : valC
-  (if (boolV? (interp (ifC-arg a) env))
-      (if (interp (ifC-arg a) env)
-          (interp (ifC-t a) env)
-          (interp (ifC-f a) env))
-      (error "DXUQ4 'if' doesn't have a boolean argument")))
+  (if (and (numV? (interp (ifC-arg a) env)) (numV? (interp (ifC-t a) env)) (numV? (interp (ifC-f a) env)))
+      (if (positive? (numV-n (cast (interp (ifC-arg a) env) numV)))
+          (interp (ifC-f a) env)
+          (interp (ifC-t a) env))
+      (error "DXUQ4 'if' doesn't have real operands")))
 
 (define (interp-app [a : appC] [env : (Listof Binding)]) : valC
   (let ([body : valC (interp (appC-body a) env)])
@@ -219,23 +217,18 @@
                                               (Binding s (interp v env)))
                                             (cloV-args body) (appC-args a))))]
       [(primV? body) (if (equal? (length (appC-args a)) 2)
-                         (let* ([val1 : valC (interp (first (appC-args a)) env)]
-                                [val2 : valC (interp (first (rest (appC-args a))) env)])
+                         (let* ([num1 : valC (interp (first (appC-args a)) env)]
+                                [num2 : valC (interp (first (rest (appC-args a))) env)])
                            (cond
-                             [(and (numV? val1) (numV? val2))
+                             [(and (numV? num1) (numV? num2))
                               (match (primV-s body)
-                                ['+ (numV (+ (numV-n val1) (numV-n val2)))]
-                                ['- (numV (- (numV-n val1) (numV-n val2)))]
-                                ['/ (numV (/ (numV-n val1) (if (zero? (numV-n val2))
+                                ['+ (numV (+ (numV-n num1) (numV-n num2)))]
+                                ['- (numV (- (numV-n num1) (numV-n num2)))]
+                                ['/ (numV (/ (numV-n num1) (if (zero? (numV-n num2))
                                                                (error "DXUQ4 Division by zero")
-                                                               (numV-n val2))))]
-                                ['* (numV (* (numV-n val1) (numV-n val2)))]
-                                ['<= (boolV (<= (numV-n val1) (numV-n val2)))]
-                                ['equal? (boolV (= (numV-n val1) (numV-n val2)))])]
-                             [(and (boolV? val1) (boolV? val2))
-                              (match (primV-s body)
-                                ['equal? (or (and val1 val2) (and (not val1) (not val2)))])]
-                             [else (error "DXUQ4 Couldn't apply primitive: arguments weren't numbers or booleans")]))
+                                                               (numV-n num2))))]
+                                ['* (numV (* (numV-n num1) (numV-n num2)))])]
+                             [else (error "DXUQ4 Couldn't apply primitive: arguments weren't numbers")]))
                          (error "DXUQ4 Couldn't apply primitive: incorrect number of arguments"))]
       [else (error "DXUQ4 Couldn't apply function")])))
 
@@ -244,15 +237,15 @@
 (check-equal? (interp (appC (idC '-) (list (numC 2) (numC 3))) top-env) (numV -1))
 (check-equal? (interp (appC (idC '*) (list (numC 2) (numC 3))) top-env) (numV 6))
 (check-equal? (interp (appC (idC '/) (list (numC 4) (numC 2))) top-env) (numV 2))
-(check-equal? (interp (ifC (appC (idC 'equal) (list (numC 1) (numC 1))) (numC 2) (numC 3)) top-env) (numV 2))
-(check-equal? (interp (ifC (appC (idC 'equal) (list (numC 1) (numC 0))) (numC 2) (numC 3)) top-env) (numV 3))
+(check-equal? (interp (ifC (numC 0) (numC 2) (numC 3)) mt-env) (numV 2))
+(check-equal? (interp (ifC (numC 1) (numC 2) (numC 3)) mt-env) (numV 3))
 
 (check-equal? (interp (appC (idC '*) (list (numC -1) (appC (idC '+) (list (numC 2) (numC 1))))) top-env) (numV -3))
 (check-equal? (interp (appC (idC '+) (list (numC 2) (appC (idC '+) (list (numC 2) (numC 1))))) top-env) (numV 5))
 (check-equal? (interp (appC (idC '-) (list (numC 2) (appC (idC '-) (list (numC 2) (numC 1))))) top-env) (numV 1))
 (check-equal? (interp (appC (idC '*) (list (numC 1) (appC (idC '/) (list (numC 4) (numC 2))))) top-env) (numV 2))
 (check-equal? (interp (appC (idC '/) (list (appC (idC '-) (list (numC 4) (numC 0))) (numC 4) )) top-env) (numV 1))
-(check-equal? (interp (ifC (appC (idC 'equal?) (list (numC 1) (numC 1)))
+(check-equal? (interp (ifC (appC (idC '-) (list (numC 1) (numC 1)))
                            (appC (idC '*) (list (numC 1) (numC 1)))
                            (numC 3)) top-env) (numV 1))
 
