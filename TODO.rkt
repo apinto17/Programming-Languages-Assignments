@@ -8,7 +8,6 @@ Re-organize code according to feedback given
     Move test cases to the end of file
     Important data definitions first, followed by important functions
 
-Change check-arguments
 Error primV
 Let
 Errors with serialization

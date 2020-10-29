@@ -92,49 +92,30 @@
            (lambda () (check-id-name 'let)))
 
 ;; Ensure argument's name is unique 
-(define (check-dup-symbol [in : (Listof Symbol)] [what : Symbol] [seen : Boolean]) : Boolean
+(define (check-dup-symbol [in : (Listof Symbol)]) : Boolean
   (cond
     [(empty? in) #t]
-    [(equal? (first in) what) (if seen
-                                  (error "DXUQ4 Duplicate identifier name")
-                                  (check-dup-symbol (rest in) what #t))]
-    [else (when (rest in) (check-dup-symbol (rest in) what seen))]))
+    [else (if (> (length (filter (λ ([x : Symbol]) (equal? (first in) x)) in)) 1)
+              (error "DXUQ4 Duplicate identifier name")
+              #t)]))
 
-(check-equal? (check-dup-symbol '() 'a #f) #t)
-(check-equal? (check-dup-symbol '(a b c) 'a #f) #t)
-(check-equal? (check-dup-symbol '(a b c d e f) 'a #f) #t)
+(check-equal? (check-dup-symbol '()) #t)
+(check-equal? (check-dup-symbol '(a b c)) #t)
+(check-equal? (check-dup-symbol '(a b c d e f)) #t)
 (check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
-           (lambda () (check-dup-symbol '(a) 'a #t)))
+           (lambda () (check-dup-symbol '(a a))))
 (check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
-           (lambda () (check-dup-symbol '(a a) 'a #f)))
-(check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
-           (lambda () (check-dup-symbol '(a b c d a) 'a #f)))
+           (lambda () (check-dup-symbol '(a b c d a))))
 
-;; Helper to check arg name and dup
-(define (check-arguments [toCheck : (Listof Symbol)] [args : (Listof Symbol)]) : (Listof idC)
-  (cond
-    [(empty? toCheck) '()]
-    [else (begin
-            (check-dup-symbol args (first toCheck) #f) 
-            (cons (check-id-name (first toCheck)) (check-arguments (rest toCheck) args)))]))
+;; Check validity of lamC's
+(define (check-lam [lam : lamC]) : lamC
+  (if (check-dup-symbol (lamC-args lam))
+      lam
+      (error "DXUQ4 Function has repeated argument")))
 
-(check-equal? (check-arguments '() '()) '())
-(check-equal? (check-arguments '(a) '(a)) (list (idC 'a)))
-(check-equal? (check-arguments '(a b c) '(a b c)) (list (idC 'a) (idC 'b) (idC 'c)))
-(check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
-           (lambda () (check-arguments '(a b b) '(a b b))))
-
-;; Top call to validate list of args
-(define (validate-arguments [args : (Listof Symbol)]) : (Listof idC)
-  (cond
-    [(empty? args) '()]
-    [else (check-arguments args args)]))
-
-(check-equal? (validate-arguments '()) '())
-(check-equal? (validate-arguments '(a)) (list (idC 'a)))
-(check-equal? (validate-arguments '(a b c)) (list (idC 'a) (idC 'b) (idC 'c)))
-(check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
-           (lambda () (validate-arguments '(a b b))))
+;; Check validity of appC's 
+(define (check-app [app : appC]) : appC
+  app)
 
 ;; Returns String representation of DXUQ4
 (define (serialize [what : valC]) : String
@@ -156,13 +137,10 @@
     [(? symbol?) (check-id-name (cast s Symbol))]
     [(list 'if a b c) (ifC (parse a) (parse b) (parse c))]
     [(list 'fn (list (? symbol? args) ...) b)
-     (lamC (cast args (Listof Symbol)) (parse b))]
+     (check-lam (lamC (cast args (Listof Symbol)) (parse b)))]
     [(list a b ...)
-     (appC (parse a)
-           (map (λ ([x : Sexp]) (parse x)) b))]
+     (check-app (appC (parse a) (map (λ ([x : Sexp]) (parse x)) b)))]
     [_ (error "DXUQ4 Not a DXUQ4 expression")]))
-
-(check-equal? (parse '(parse '(fn (x x) 3))) (numC 4))
 
 (check-equal? (parse '1) (numC 1))
 (check-equal? (parse '(+ 1 2)) (appC (idC '+) (list (numC 1) (numC 2))))
@@ -196,6 +174,8 @@
 (check-equal? (parse '{fn {x} {x}}) (lamC '(x) (appC (idC 'x) '())))
 (check-equal? (parse '{fn {x y} {+ x y}}) (lamC '(x y) (appC (idC '+) (list (idC 'x) (idC 'y)))))
 
+(check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
+           (lambda () (parse '(parse '(fn (x x) 3)))))
 (check-exn (regexp (regexp-quote "DXUQ4 Not a DXUQ4 expression"))
            (lambda () (parse '((((((())))))))))
 
