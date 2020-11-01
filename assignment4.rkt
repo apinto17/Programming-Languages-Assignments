@@ -96,22 +96,22 @@
   (cond
     [(empty? in) #t]
     [else (if (> (length (filter (λ ([x : Symbol]) (equal? (first in) x)) in)) 1)
-              (error "DXUQ4 Duplicate identifier name")
-              #t)]))
+              #f #t)]))
 
 (check-equal? (check-dup-symbol '()) #t)
 (check-equal? (check-dup-symbol '(a b c)) #t)
 (check-equal? (check-dup-symbol '(a b c d e f)) #t)
-(check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
-           (lambda () (check-dup-symbol '(a a))))
-(check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
-           (lambda () (check-dup-symbol '(a b c d a))))
+(check-equal? (check-dup-symbol '(a a)) #f)
+(check-equal? (check-dup-symbol '(a b c d a)) #f)
 
 ;; Check validity of lamC's
 (define (check-lam [lam : lamC]) : lamC
   (if (check-dup-symbol (lamC-args lam))
       lam
-      (error "DXUQ4 Function has repeated argument")))
+      (error "DXUQ4 Duplicate identifier name")))
+
+(check-exn (regexp (regexp-quote "DXUQ4 Invalid identifier name"))
+           (lambda () (check-id-name 'let)))
 
 ;; Check validity of appC's 
 (define (check-app [app : appC]) : appC
