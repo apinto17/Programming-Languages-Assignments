@@ -140,15 +140,10 @@
     [(list 'if a b c) (ifC (parse a) (parse b) (parse c))]
     [(list 'fn (list (? symbol? args) ...) b)
      (check-lam (lamC (cast args (Listof Symbol)) (parse b)))]
-    ;[(list 'let a 'in b) (desugar-let a b)]
+    [(list 'let a ... 'in b) (desugar-let (cast a (Listof Sexp)) b)]
     [(list a b ...)
      (check-app (appC (parse a) (map (λ ([x : Sexp]) (parse x)) b)))]
     [_ (error "DXUQ4 Not a DXUQ4 expression")]))
-
-;(define (desugar-let [a : Sexp] [b :]) : lamC
-;  (displayln s))
-;
-;(check-equal? (parse '(let )))
 
 (check-equal? (parse '1) (numC 1))
 (check-equal? (parse '(+ 1 2)) (appC (idC '+) (list (numC 1) (numC 2))))
@@ -186,6 +181,20 @@
            (lambda () (parse '(parse '(fn (x x) 3)))))
 (check-exn (regexp (regexp-quote "DXUQ4 Not a DXUQ4 expression"))
            (lambda () (parse '((((((())))))))))
+
+;; Desugar let into appC and lamC
+(define (desugar-let [args : (Listof Sexp)] [body : Sexp]) : appC
+  (match args
+    [(list (list a '= b) ...) (appC (lamC (cast a (Listof Symbol)) (parse body))
+                                    (map (λ (n) (parse n)) (cast b (Listof Sexp))))]))
+
+
+(check-equal? (parse '{let {z = 0} in {z}}) (appC (lamC '(z) (appC (idC 'z) '())) (list (numC 0))))
+(check-equal? (parse '{let {z = {+ 9 14}} {y = 98} in {+ z y}})
+              (appC (lamC '(z y) (appC (idC '+) (list (idC 'z) (idC 'y))))
+                    (list
+                     (appC (idC '+) (list (numC 9) (numC 14)))
+                     (numC 98))))
 
 ;; Interpret DXUQ4 expressions
 (define (interp [a : ExprC] [env : Env]) : Value
