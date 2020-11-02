@@ -7,22 +7,22 @@
 ;; Numbers and Operations
 (struct numC ([n : Real])
   #:transparent)
-(struct ifC ([arg : DXUQ4]
-             [t : DXUQ4]
-             [f : DXUQ4])
+(struct ifC ([arg : ExprC]
+             [t : ExprC]
+             [f : ExprC])
   #:transparent)
 
 ;; Functions
 (struct idC([s : Symbol])
   #:transparent)
-(struct appC([body : DXUQ4]
-             [args : (Listof DXUQ4)])
+(struct appC([body : ExprC]
+             [args : (Listof ExprC)])
   #:transparent)
 (struct lamC ([args : (Listof Symbol)]
-              [body : DXUQ4])
+              [body : ExprC])
   #:transparent)
 
-(define-type DXUQ4 (U numC ifC appC idC lamC))
+(define-type ExprC (U numC ifC appC idC lamC))
 
 ;; Values
 (struct numV ([n : Real])
@@ -30,18 +30,20 @@
 (struct boolV ([b : Boolean])
   #:transparent)
 (struct cloV ([args : (Listof Symbol)]
-              [body : DXUQ4]
-              [env : (Listof Binding)])
+              [body : ExprC]
+              [env : Env])
   #:transparent)
 (struct primV ([s : Symbol])
   #:transparent)
 
-(define-type valC (U numV boolV cloV primV))
+(define-type Value (U numV boolV cloV primV))
 
 ;; Environment
 (struct Binding ([name : Symbol]
-                 [val : valC])
+                 [val : Value])
   #:transparent)
+
+(define-type Env (Listof Binding))
 
 (define mt-env empty)
 (define extend-env cons)
@@ -56,7 +58,7 @@
         (Binding 'equal? (primV 'equal?))))
 
 ;; Get symbol from env
-(define (lookup [s : Symbol] [env : (Listof Binding)]) : valC
+(define (lookup [s : Symbol] [env : Env]) : Value
   (cond
     [(empty? env) (error "DXUQ4 Unbound identifier")]
     [(equal? s (Binding-name (first env))) (Binding-val (first env))]
@@ -118,7 +120,7 @@
   app)
 
 ;; Returns String representation of DXUQ4
-(define (serialize [what : valC]) : String
+(define (serialize [what : Value]) : String
   (match what
     [(numV n) (~v n)]
     [(boolV b) (~v b)]
@@ -131,16 +133,22 @@
 (check-equal? (serialize (primV '+)) "#<primop>")
 
 ;; Parse Sexp into DXUQ4 expression
-(define (parse [s : Sexp]) : DXUQ4
+(define (parse [s : Sexp]) : ExprC
   (match s
     [(? real?) (numC s)]
     [(? symbol?) (check-id-name (cast s Symbol))]
     [(list 'if a b c) (ifC (parse a) (parse b) (parse c))]
     [(list 'fn (list (? symbol? args) ...) b)
      (check-lam (lamC (cast args (Listof Symbol)) (parse b)))]
+    ;[(list 'let a 'in b) (desugar-let a b)]
     [(list a b ...)
      (check-app (appC (parse a) (map (λ ([x : Sexp]) (parse x)) b)))]
     [_ (error "DXUQ4 Not a DXUQ4 expression")]))
+
+;(define (desugar-let [a : Sexp] [b :]) : lamC
+;  (displayln s))
+;
+;(check-equal? (parse '(let )))
 
 (check-equal? (parse '1) (numC 1))
 (check-equal? (parse '(+ 1 2)) (appC (idC '+) (list (numC 1) (numC 2))))
@@ -180,7 +188,7 @@
            (lambda () (parse '((((((())))))))))
 
 ;; Interpret DXUQ4 expressions
-(define (interp [a : DXUQ4] [env : (Listof Binding)]) : valC
+(define (interp [a : ExprC] [env : Env]) : Value
   (match a
     [(numC n) (numV n)]
     [(idC s) (lookup s env)]
@@ -192,20 +200,20 @@
     [(appC f args) (interp-app a env)]
     [(lamC args b) (cloV args b env)]))
 
-
-(define (interp-app [a : appC] [env : (Listof Binding)]) : valC
-  (let ([body : valC (interp (appC-body a) env)])
+;; Interpret appC's
+(define (interp-app [a : appC] [env : Env]) : Value
+  (let ([body : Value (interp (appC-body a) env)])
     (match body
       [(? numV? body) body]
       [(? cloV? body) (interp (cloV-body body)
                               (if (= (length (cloV-args body)) (length (appC-args a)))
-                                  (append env (map (λ ([s : Symbol] [v : DXUQ4])
+                                  (append env (map (λ ([s : Symbol] [v : ExprC])
                                                      (Binding s (interp v env)))
                                                    (cloV-args body) (appC-args a)))
                                   (error "DXUQ4 inconsistent number of args")))]
       [(? primV? body) (if (equal? (length (appC-args a)) 2)
-                           (let* ([val1 : valC (interp (first (appC-args a)) env)]
-                                  [val2 : valC (interp (first (rest (appC-args a))) env)])
+                           (let* ([val1 : Value (interp (first (appC-args a)) env)]
+                                  [val2 : Value (interp (first (rest (appC-args a))) env)])
                              (cond
                                [(and (numV? val1) (numV? val2))
                                 (match (primV-s body)
