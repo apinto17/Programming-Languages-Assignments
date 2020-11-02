@@ -40,7 +40,7 @@
 
 ;; Environment
 (struct Binding ([name : Symbol]
-                  [val : valC])
+                 [val : valC])
   #:transparent)
 
 (define mt-env empty)
@@ -57,7 +57,7 @@
 
 ;; Get symbol from env
 (define (lookup [s : Symbol] [env : (Listof Binding)]) : valC
-   (cond
+  (cond
     [(empty? env) (error "DXUQ4 Unbound identifier")]
     [(equal? s (Binding-name (first env))) (Binding-val (first env))]
     [else (lookup s (rest env))]))
@@ -76,6 +76,8 @@
   (cond 
     [(symbol=? 'fn s) (error "DXUQ4 Invalid identifier name")]
     [(symbol=? 'if s) (error "DXUQ4 Invalid identifier name")]
+    [(symbol=? 'in s) (error "DXUQ4 Invalid identifier name")]
+    [(symbol=? 'let s) (error "DXUQ4 Invalid identifier name")]
     [else (idC s)]))
 
 (check-equal? (check-id-name 'x) (idC 'x))
@@ -84,55 +86,36 @@
            (lambda () (check-id-name 'fn)))
 (check-exn (regexp (regexp-quote "DXUQ4 Invalid identifier name"))
            (lambda () (check-id-name 'if)))
+(check-exn (regexp (regexp-quote "DXUQ4 Invalid identifier name"))
+           (lambda () (check-id-name 'in)))
+(check-exn (regexp (regexp-quote "DXUQ4 Invalid identifier name"))
+           (lambda () (check-id-name 'let)))
 
 ;; Ensure argument's name is unique 
-(define (check-dup-symbol [in : (Listof Symbol)] [what : Symbol] [seen : Boolean]) : Boolean
+(define (check-dup-symbol [in : (Listof Symbol)]) : Boolean
   (cond
     [(empty? in) #t]
-    [(equal? (first in) what) (if seen
-                                  (error "DXUQ4 Duplicate identifier name")
-                                  (check-dup-symbol (rest in) what #t))]
-    [else (when (rest in) (check-dup-symbol (rest in) what seen))]))
+    [else (if (> (length (filter (λ ([x : Symbol]) (equal? (first in) x)) in)) 1)
+              #f #t)]))
 
-(check-equal? (check-dup-symbol '() 'a #f) #t)
-(check-equal? (check-dup-symbol '(a b c) 'a #f) #t)
-(check-equal? (check-dup-symbol '(a b c d e f) 'a #f) #t)
-(check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
-           (lambda () (check-dup-symbol '(a) 'a #t)))
-(check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
-           (lambda () (check-dup-symbol '(a a) 'a #f)))
-(check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
-           (lambda () (check-dup-symbol '(a b c d a) 'a #f)))
+(check-equal? (check-dup-symbol '()) #t)
+(check-equal? (check-dup-symbol '(a b c)) #t)
+(check-equal? (check-dup-symbol '(a b c d e f)) #t)
+(check-equal? (check-dup-symbol '(a a)) #f)
+(check-equal? (check-dup-symbol '(a b c d a)) #f)
 
-;; Helper to check arg name and dup
-(define (check-arguments [toCheck : (Listof Symbol)] [args : (Listof Symbol)]) : (Listof idC)
-  (cond
-    [(empty? toCheck) '()]
-    [else (begin
-            (check-dup-symbol args (first toCheck) #f) 
-            (cons (check-id-name (first toCheck)) (check-arguments (rest toCheck) args)))]))
+;; Check validity of lamC's
+(define (check-lam [lam : lamC]) : lamC
+  (if (check-dup-symbol (lamC-args lam))
+      lam
+      (error "DXUQ4 Duplicate identifier name")))
 
-(check-equal? (check-arguments '() '()) '())
-(check-equal? (check-arguments '(a) '(a)) (list (idC 'a)))
-(check-equal? (check-arguments '(a b c) '(a b c)) (list (idC 'a) (idC 'b) (idC 'c)))
-;(check-exn (regexp (regexp-quote "DXUQ4 Invalid identifier name"))
-;           (lambda () (check-arguments '(a b /) '(a b /))))
-(check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
-           (lambda () (check-arguments '(a b b) '(a b b))))
+(check-exn (regexp (regexp-quote "DXUQ4 Invalid identifier name"))
+           (lambda () (check-id-name 'let)))
 
-;; Top call to validate list of args
-(define (validate-arguments [args : (Listof Symbol)]) : (Listof idC)
-  (cond
-    [(empty? args) '()]
-    [else (check-arguments args args)]))
-
-(check-equal? (validate-arguments '()) '())
-(check-equal? (validate-arguments '(a)) (list (idC 'a)))
-(check-equal? (validate-arguments '(a b c)) (list (idC 'a) (idC 'b) (idC 'c)))
-;(check-exn (regexp (regexp-quote "DXUQ4 Invalid identifier name"))
-;           (lambda () (validate-arguments '(a b /))))
-(check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
-           (lambda () (validate-arguments '(a b b))))
+;; Check validity of appC's 
+(define (check-app [app : appC]) : appC
+  app)
 
 ;; Returns String representation of DXUQ4
 (define (serialize [what : valC]) : String
@@ -154,10 +137,9 @@
     [(? symbol?) (check-id-name (cast s Symbol))]
     [(list 'if a b c) (ifC (parse a) (parse b) (parse c))]
     [(list 'fn (list (? symbol? args) ...) b)
-     (lamC (cast args (Listof Symbol)) (parse b))]
+     (check-lam (lamC (cast args (Listof Symbol)) (parse b)))]
     [(list a b ...)
-     (appC (parse a)
-           (map (λ ([x : Sexp]) (parse x)) b))]
+     (check-app (appC (parse a) (map (λ ([x : Sexp]) (parse x)) b)))]
     [_ (error "DXUQ4 Not a DXUQ4 expression")]))
 
 (check-equal? (parse '1) (numC 1))
@@ -165,7 +147,8 @@
 (check-equal? (parse '(- 2 1)) (appC (idC '-) (list (numC 2) (numC 1))))
 (check-equal? (parse '(* 1 2)) (appC (idC '*) (list (numC 1) (numC 2))))
 (check-equal? (parse '(/ 2 4)) (appC (idC '/) (list (numC 2) (numC 4))))
-(check-equal? (parse '(if (equal? 1 1) 2 3)) (ifC (appC (idC 'equal?) (list (numC 1) (numC 1))) (numC 2) (numC 3)))
+(check-equal? (parse '(if (equal? 1 1) 2 3))
+              (ifC (appC (idC 'equal?) (list (numC 1) (numC 1))) (numC 2) (numC 3)))
 
 (check-equal? (parse '(+ (+ 2 1) 2))
               (appC (idC '+) (list (appC (idC '+) (list (numC 2) (numC 1))) (numC 2))))
@@ -191,10 +174,10 @@
 (check-equal? (parse '{fn {x} {x}}) (lamC '(x) (appC (idC 'x) '())))
 (check-equal? (parse '{fn {x y} {+ x y}}) (lamC '(x y) (appC (idC '+) (list (idC 'x) (idC 'y)))))
 
+(check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
+           (lambda () (parse '(parse '(fn (x x) 3)))))
 (check-exn (regexp (regexp-quote "DXUQ4 Not a DXUQ4 expression"))
            (lambda () (parse '((((((())))))))))
-
-
 
 ;; Interpret DXUQ4 expressions
 (define (interp [a : DXUQ4] [env : (Listof Binding)]) : valC
@@ -205,7 +188,7 @@
      (define temp (interp a env))
      (if (boolV? temp)
          (if (boolV-b temp) (interp t env) (interp f env))
-         (error 'interp "DXUQ4 isn't a boolean value"))]
+         (error 'interpp "DXUQ4 isn't a boolean value"))]
     [(appC f args) (interp-app a env)]
     [(lamC args b) (cloV args b env)]))
 
@@ -215,30 +198,30 @@
     (match body
       [(? numV? body) body]
       [(? cloV? body) (interp (cloV-body body)
-                           (if (= (length (cloV-args body)) (length (appC-args a)))
-                           (append env (map (λ ([s : Symbol] [v : DXUQ4])
-                                              (Binding s (interp v env)))
-                                            (cloV-args body) (appC-args a)))
-                           (error "DXUQ4 inconsistent number of args")))]
+                              (if (= (length (cloV-args body)) (length (appC-args a)))
+                                  (append env (map (λ ([s : Symbol] [v : DXUQ4])
+                                                     (Binding s (interp v env)))
+                                                   (cloV-args body) (appC-args a)))
+                                  (error "DXUQ4 inconsistent number of args")))]
       [(? primV? body) (if (equal? (length (appC-args a)) 2)
-                         (let* ([val1 : valC (interp (first (appC-args a)) env)]
-                                [val2 : valC (interp (first (rest (appC-args a))) env)])
-                           (cond
-                             [(and (numV? val1) (numV? val2))
-                              (match (primV-s body)
-                                ['+ (numV (+ (numV-n val1) (numV-n val2)))]
-                                ['- (numV (- (numV-n val1) (numV-n val2)))]
-                                ['/ (numV (/ (numV-n val1) (if (zero? (numV-n val2))
-                                                               (error "DXUQ4 Division by zero")
-                                                               (numV-n val2))))]
-                                ['* (numV (* (numV-n val1) (numV-n val2)))]
-                                ['<= (boolV (<= (numV-n val1) (numV-n val2)))]
-                                ['equal? (boolV (= (numV-n val1) (numV-n val2)))])]
-                             [(and (boolV? val1) (boolV? val2))
-                              (match (primV-s body)
-                                ['equal? (and val1 val2)])]
-                             [else (error "DXUQ4 Couldn't apply primitive: arguments weren't numbers or booleans")]))
-                         (error "DXUQ4 Couldn't apply primitive: incorrect number of arguments"))])))
+                           (let* ([val1 : valC (interp (first (appC-args a)) env)]
+                                  [val2 : valC (interp (first (rest (appC-args a))) env)])
+                             (cond
+                               [(and (numV? val1) (numV? val2))
+                                (match (primV-s body)
+                                  ['+ (numV (+ (numV-n val1) (numV-n val2)))]
+                                  ['- (numV (- (numV-n val1) (numV-n val2)))]
+                                  ['/ (numV (/ (numV-n val1) (if (zero? (numV-n val2))
+                                                                 (error "DXUQ4 Division by zero")
+                                                                 (numV-n val2))))]
+                                  ['* (numV (* (numV-n val1) (numV-n val2)))]
+                                  ['<= (boolV (<= (numV-n val1) (numV-n val2)))]
+                                  ['equal? (boolV (= (numV-n val1) (numV-n val2)))])]
+                               [(and (boolV? val1) (boolV? val2))
+                                (match (primV-s body)
+                                  ['equal? (and val1 val2)])]
+                               [else (error "DXUQ4 Couldn't apply primitive: arguments weren't numbers or booleans")]))
+                           (error "DXUQ4 Couldn't apply primitive: incorrect number of arguments"))])))
 
 (check-equal? (interp (numC 4) mt-env) (numV 4))
 (check-equal? (interp (appC (idC '+) (list (numC 2) (numC 3))) top-env) (numV 5))
@@ -249,15 +232,20 @@
 (check-equal? (interp (ifC (appC (idC '<=) (list (numC 1) (numC 1))) (numC 2) (numC 3)) top-env) (numV 2))
 (check-equal? (interp (ifC (appC (idC '<=) (list (numC 1) (numC 0))) (numC 2) (numC 3)) top-env) (numV 3))
 (check-equal? (interp (ifC (appC (idC 'equal?)
-      (list (appC (idC '<=)
-      (list (numC 1) (numC 1))) (appC (idC '<=) (list (numC 1) (numC 1))))) (numC 2) (numC 3)) top-env) (numV 2))
+                                 (list (appC (idC '<=)
+                                             (list (numC 1) (numC 1)))
+                                       (appC (idC '<=) (list (numC 1) (numC 1)))))
+                           (numC 2) (numC 3)) top-env) (numV 2))
 (check-exn (regexp (regexp-quote "DXUQ4 Couldn't apply primitive: arguments weren't numbers or booleans"))
            (lambda () (interp (ifC (appC (idC 'equal?) (list (numC 3)
-           (appC (idC '<=) (list (numC 1) (numC 1))))) (numC 2) (numC 3)) top-env)))
+                                                             (appC (idC '<=) (list (numC 1) (numC 1)))))
+                                   (numC 2) (numC 3)) top-env)))
 (check-exn (regexp (regexp-quote "DXUQ4 Couldn't apply primitive: incorrect number of arguments"))
            (lambda () (interp (ifC (appC (idC 'equal?) (list (appC (idC '<=)
-           (list (numC 1) (numC 1))) (appC (idC '<=) (list (numC 1) (numC 1)))
-           (appC (idC '<=) (list (numC 1) (numC 1))))) (numC 2) (numC 3)) top-env)))
+                                                                   (list (numC 1) (numC 1)))
+                                                             (appC (idC '<=) (list (numC 1) (numC 1)))
+                                                             (appC (idC '<=) (list (numC 1) (numC 1)))))
+                                   (numC 2) (numC 3)) top-env)))
 (check-exn (regexp (regexp-quote "DXUQ4 isn't a boolean value"))
            (lambda () (interp (ifC (numC 3) (numC 2) (numC 3)) top-env)))
 
@@ -296,7 +284,5 @@
 (check-equal? (top-interp '((fn (z y) (+ z y)) (+ 9 14) 98)) "121")
 (check-exn (regexp (regexp-quote "DXUQ4 inconsistent number of args"))
            (lambda () (top-interp '((fn () 9) 17))))
-
-
 
 "DONE"
