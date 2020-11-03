@@ -60,7 +60,7 @@
 ;; Get symbol from env
 (define (lookup [s : Symbol] [env : Env]) : Value
   (cond
-    [(empty? env) (error "DXUQ4 Unbound identifier")]
+    [(empty? env) (error "DXUQ4 Unbound identifier:" s)]
     [(equal? s (Binding-name (first env))) (Binding-val (first env))]
     [else (lookup s (rest env))]))
 
@@ -76,10 +76,10 @@
 ;; Make sure id name is valid
 (define (check-id-name [s : Symbol]) : idC
   (cond 
-    [(symbol=? 'fn s) (error "DXUQ4 Invalid identifier name")]
-    [(symbol=? 'if s) (error "DXUQ4 Invalid identifier name")]
-    [(symbol=? 'in s) (error "DXUQ4 Invalid identifier name")]
-    [(symbol=? 'let s) (error "DXUQ4 Invalid identifier name")]
+    [(symbol=? 'fn s) (error "DXUQ4 Invalid identifier name:" s)]
+    [(symbol=? 'if s) (error "DXUQ4 Invalid identifier name:" s)]
+    [(symbol=? 'in s) (error "DXUQ4 Invalid identifier name:" s)]
+    [(symbol=? 'let s) (error "DXUQ4 Invalid identifier name:" s)]
     [else (idC s)]))
 
 (check-equal? (check-id-name 'x) (idC 'x))
@@ -112,8 +112,11 @@
       lam
       (error "DXUQ4 Duplicate identifier name")))
 
-(check-exn (regexp (regexp-quote "DXUQ4 Invalid identifier name"))
-           (lambda () (check-id-name 'let)))
+(check-equal? (check-lam (lamC '() (numC 4))) (lamC '() (numC 4)))
+(check-equal? (check-lam (lamC '(a) (numC 4))) (lamC '(a) (numC 4)))
+(check-equal? (check-lam (lamC '(a b c) (numC 4))) (lamC '(a b c) (numC 4)))
+(check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
+           (lambda () (check-lam (lamC '(a b a) (numC 4)))))
 
 ;; Check validity of appC's 
 (define (check-app [app : appC]) : appC
@@ -140,7 +143,10 @@
     [(list 'if a b c) (ifC (parse a) (parse b) (parse c))]
     [(list 'fn (list (? symbol? args) ...) b)
      (check-lam (lamC (cast args (Listof Symbol)) (parse b)))]
-    [(list 'let a ... 'in b) (desugar-let (cast a (Listof Sexp)) b)]
+    [(list 'let a ... 'in b)
+     (match (cast a (Listof Sexp))
+       [(list (list c '= d) ...) (appC (check-lam (lamC (cast c (Listof Symbol)) (parse b)))
+                                       (map (λ (n) (parse n)) (cast d (Listof Sexp))))])]
     [(list a b ...)
      (check-app (appC (parse a) (map (λ ([x : Sexp]) (parse x)) b)))]
     [_ (error "DXUQ4 Not a DXUQ4 expression")]))
@@ -177,24 +183,19 @@
 (check-equal? (parse '{fn {x} {x}}) (lamC '(x) (appC (idC 'x) '())))
 (check-equal? (parse '{fn {x y} {+ x y}}) (lamC '(x y) (appC (idC '+) (list (idC 'x) (idC 'y)))))
 
-(check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
-           (lambda () (parse '(parse '(fn (x x) 3)))))
-(check-exn (regexp (regexp-quote "DXUQ4 Not a DXUQ4 expression"))
-           (lambda () (parse '((((((())))))))))
-
-;; Desugar let into appC and lamC
-(define (desugar-let [args : (Listof Sexp)] [body : Sexp]) : appC
-  (match args
-    [(list (list a '= b) ...) (appC (lamC (cast a (Listof Symbol)) (parse body))
-                                    (map (λ (n) (parse n)) (cast b (Listof Sexp))))]))
-
-
 (check-equal? (parse '{let {z = 0} in {z}}) (appC (lamC '(z) (appC (idC 'z) '())) (list (numC 0))))
 (check-equal? (parse '{let {z = {+ 9 14}} {y = 98} in {+ z y}})
               (appC (lamC '(z y) (appC (idC '+) (list (idC 'z) (idC 'y))))
                     (list
                      (appC (idC '+) (list (numC 9) (numC 14)))
                      (numC 98))))
+(check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
+           (lambda () (parse '{let {z = 0} {z = 1} in {z}})))
+
+(check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
+           (lambda () (parse '(parse '(fn (x x) 3)))))
+(check-exn (regexp (regexp-quote "DXUQ4 Not a DXUQ4 expression"))
+           (lambda () (parse '((((((())))))))))
 
 ;; Interpret DXUQ4 expressions
 (define (interp [a : ExprC] [env : Env]) : Value
@@ -301,5 +302,14 @@
 (check-equal? (top-interp '((fn (z y) (+ z y)) (+ 9 14) 98)) "121")
 (check-exn (regexp (regexp-quote "DXUQ4 inconsistent number of args"))
            (lambda () (top-interp '((fn () 9) 17))))
+
+(parse (quote ((fn (seven) (seven))
+                                  ((fn (minus)
+                                       (fn () (minus (+ 3 10) (* 2 3))))
+                                   (fn (x y) (+ x (* -1 y)))))))
+(check-equal? (top-interp (quote ((fn (seven) (seven))
+                                  ((fn (minus)
+                                       (fn () (minus (+ 3 10) (* 2 3))))
+                                   (fn (x y) (+ x (* -1 y))))))) "something")
 
 "DONE"
