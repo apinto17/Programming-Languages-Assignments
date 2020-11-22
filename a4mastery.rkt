@@ -227,21 +227,21 @@
                                                    [val2 : Value (interp (first (rest (appC-args a))) env)])
                                               (cond
                                                 [(and (numV? val1) (numV? val2))
-                                                 (match (primV-s body)
-                                                   ['+ (numV (+ (numV-n val1) (numV-n val2)))]
-                                                   ['- (numV (- (numV-n val1) (numV-n val2)))]
-                                                   ['/ (numV (/ (numV-n val1) (if (zero? (numV-n val2))
+                                                 (match (begin (displayln body) (displayln (lookup (primV-s body) (reverse env))) (lookup (primV-s body) (reverse env)))
+                                                   [(primV '+) (numV (+ (numV-n val1) (numV-n val2)))]
+                                                   [(primV '-) (numV (- (numV-n val1) (numV-n val2)))]
+                                                   [(primV '/) (numV (/ (numV-n val1) (if (zero? (numV-n val2))
                                                                                   (error "DXUQ4 Division by zero")
                                                                                   (numV-n val2))))]
-                                                   ['* (numV (* (numV-n val1) (numV-n val2)))]
-                                                   ['<= (boolV (<= (numV-n val1) (numV-n val2)))]
-                                                   ['equal? (boolV (= (numV-n val1) (numV-n val2)))])]
+                                                   [(primV '*) (numV (* (numV-n val1) (numV-n val2)))]
+                                                   [(primV '<=) (boolV (<= (numV-n val1) (numV-n val2)))]
+                                                   [(primV 'equal?) (boolV (= (numV-n val1) (numV-n val2)))])]
                                                 [(and (boolV? val1) (boolV? val2))
                                                  (match (primV-s body)
                                                    ['equal? (and val1 val2)])]
                                                 [else (error "DXUQ4 Couldn't apply primitive (not num or bool)")]))
                                             (error "DXUQ4 Couldn't apply primitive: incorrect number of arguments"))]))]
-    [(lamC args b) (cloV args b env)]))
+    [(lamC args b) (begin (displayln env) (cloV args b env))]))
 
 (check-equal? (interp (numC 4) mt-env) (numV 4))
 (check-equal? (interp (appC (idC '+) (list (numC 2) (numC 3))) top-env) (numV 5))
@@ -311,6 +311,9 @@
 ;                                  ((fn (minus)
 ;                                       (fn () (minus (+ 3 10) (* 2 3))))
 ;                                   (fn (x y) (+ x (* -1 y))))))) "something")
+
+(parse (quote (let (+ = -) (- = +) in (+ 3 (- 6 4)))))
+(check-equal? (top-interp (quote (let (+ = -) (- = +) in (+ 3 (- 6 4))))) "7")
 
 
 "DONE"
