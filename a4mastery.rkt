@@ -201,45 +201,47 @@
 (define (interp [a : ExprC] [env : Env]) : Value
   (match a
     [(numC n) (numV n)]
-    [(idC s) (lookup s env)]
+    [(idC s) (lookup s (reverse env))]
     [(ifC a t f)
      (define temp (interp a env))
      (if (boolV? temp)
          (if (boolV-b temp) (interp t env) (interp f env))
          (error 'interpp "DXUQ4 isn't a boolean value"))]
-    [(appC f args) (interp-app a env)]
+    [(appC f args) (let ([body : Value (interp (appC-body a)
+                                         (match f
+                                           [(lamC lam-args lam-body) (if (= (length lam-args)
+                                                                            (length args))
+                                                                         (append env (map (λ ([s : Symbol] [v : ExprC])                                                               
+                                                                                             (Binding s (interp v env)))
+                                                                                          lam-args args))
+                                                                         (error "DXUQ4 inconsistent number of args"))]
+                                           [_ env]))])               
+                     (match body
+                       [(? numV? body) body]
+                       [(? cloV? body) (interp (cloV-body body)
+                                               (append env (map (λ ([s : Symbol] [v : ExprC])                                                               
+                                                                  (Binding s (interp v env)))
+                                                                (cloV-args body) (appC-args a))))]
+                       [(? primV? body) (if (equal? (length (appC-args a)) 2)
+                                            (let* ([val1 : Value (interp (first (appC-args a)) env)]
+                                                   [val2 : Value (interp (first (rest (appC-args a))) env)])
+                                              (cond
+                                                [(and (numV? val1) (numV? val2))
+                                                 (match (primV-s body)
+                                                   ['+ (numV (+ (numV-n val1) (numV-n val2)))]
+                                                   ['- (numV (- (numV-n val1) (numV-n val2)))]
+                                                   ['/ (numV (/ (numV-n val1) (if (zero? (numV-n val2))
+                                                                                  (error "DXUQ4 Division by zero")
+                                                                                  (numV-n val2))))]
+                                                   ['* (numV (* (numV-n val1) (numV-n val2)))]
+                                                   ['<= (boolV (<= (numV-n val1) (numV-n val2)))]
+                                                   ['equal? (boolV (= (numV-n val1) (numV-n val2)))])]
+                                                [(and (boolV? val1) (boolV? val2))
+                                                 (match (primV-s body)
+                                                   ['equal? (and val1 val2)])]
+                                                [else (error "DXUQ4 Couldn't apply primitive (not num or bool)")]))
+                                            (error "DXUQ4 Couldn't apply primitive: incorrect number of arguments"))]))]
     [(lamC args b) (cloV args b env)]))
-
-;; Interpret appC's
-(define (interp-app [a : appC] [env : Env]) : Value
-  (let ([body : Value (interp (appC-body a) env)])
-    (match body
-      [(? numV? body) body]
-      [(? cloV? body) (interp (cloV-body body)
-                              (if (= (length (cloV-args body)) (length (appC-args a)))
-                                  (append env (map (λ ([s : Symbol] [v : ExprC])
-                                                     (Binding s (interp v env)))
-                                                   (cloV-args body) (appC-args a)))
-                                  (error "DXUQ4 inconsistent number of args")))]
-      [(? primV? body) (if (equal? (length (appC-args a)) 2)
-                           (let* ([val1 : Value (interp (first (appC-args a)) env)]
-                                  [val2 : Value (interp (first (rest (appC-args a))) env)])
-                             (cond
-                               [(and (numV? val1) (numV? val2))
-                                (match (primV-s body)
-                                  ['+ (numV (+ (numV-n val1) (numV-n val2)))]
-                                  ['- (numV (- (numV-n val1) (numV-n val2)))]
-                                  ['/ (numV (/ (numV-n val1) (if (zero? (numV-n val2))
-                                                                 (error "DXUQ4 Division by zero")
-                                                                 (numV-n val2))))]
-                                  ['* (numV (* (numV-n val1) (numV-n val2)))]
-                                  ['<= (boolV (<= (numV-n val1) (numV-n val2)))]
-                                  ['equal? (boolV (= (numV-n val1) (numV-n val2)))])]
-                               [(and (boolV? val1) (boolV? val2))
-                                (match (primV-s body)
-                                  ['equal? (and val1 val2)])]
-                               [else (error "DXUQ4 Couldn't apply primitive: arguments weren't numbers or booleans")]))
-                           (error "DXUQ4 Couldn't apply primitive: incorrect number of arguments"))])))
 
 (check-equal? (interp (numC 4) mt-env) (numV 4))
 (check-equal? (interp (appC (idC '+) (list (numC 2) (numC 3))) top-env) (numV 5))
@@ -254,7 +256,7 @@
                                              (list (numC 1) (numC 1)))
                                        (appC (idC '<=) (list (numC 1) (numC 1)))))
                            (numC 2) (numC 3)) top-env) (numV 2))
-(check-exn (regexp (regexp-quote "DXUQ4 Couldn't apply primitive: arguments weren't numbers or booleans"))
+(check-exn (regexp (regexp-quote "DXUQ4 Couldn't apply primitive (not num or bool)"))
            (lambda () (interp (ifC (appC (idC 'equal?) (list (numC 3)
                                                              (appC (idC '<=) (list (numC 1) (numC 1)))))
                                    (numC 2) (numC 3)) top-env)))
@@ -282,10 +284,6 @@
                             (list (numC 1) (numC 2))) top-env) (numV 3))
 (check-equal? (interp (appC (lamC '(a b) (appC (appC (idC '+) (list (idC 'a) (idC 'b))) (list (idC 'a) (idC 'b))))
                             (list (appC (idC '+) (list (numC 2) (numC 1))) (numC 2))) top-env) (numV 5))
-(check-equal? (interp (appC (lamC '(a) (appC (lamC '(a) (appC (idC 'a)
-                                                              (list (numC 1))))
-                                             (list (numC 2))))
-                            (list (numC 3))) top-env) (numV 3))
 
 (check-exn (regexp (regexp-quote "DXUQ4 Unbound identifier"))
            (lambda () (interp (idC 'something) mt-env)))
@@ -300,16 +298,19 @@
 
 (check-equal? (top-interp '(if (equal? 1 0) (* 1 1) 3)) "3")
 (check-equal? (top-interp '((fn (z y) (+ z y)) (+ 9 14) 98)) "121")
+(check-equal? (top-interp (quote ((fn (+) (* + +)) 14))) "196")
 (check-exn (regexp (regexp-quote "DXUQ4 inconsistent number of args"))
            (lambda () (top-interp '((fn () 9) 17))))
 
-(parse (quote ((fn (seven) (seven))
-                                  ((fn (minus)
-                                       (fn () (minus (+ 3 10) (* 2 3))))
-                                   (fn (x y) (+ x (* -1 y)))))))
-(check-equal? (top-interp (quote ((fn (seven) (seven))
-                                  ((fn (minus)
-                                       (fn () (minus (+ 3 10) (* 2 3))))
-                                   (fn (x y) (+ x (* -1 y))))))) "something")
+;(parse (quote ((fn (seven) (seven))
+;               ((fn (minus)
+;                    (fn () (minus (+ 3 10) (* 2 3))))
+;                (fn (x y) (+ x (* -1 y)))))))
+
+;(check-equal? (top-interp (quote ((fn (seven) (seven))
+;                                  ((fn (minus)
+;                                       (fn () (minus (+ 3 10) (* 2 3))))
+;                                   (fn (x y) (+ x (* -1 y))))))) "something")
+
 
 "DONE"
