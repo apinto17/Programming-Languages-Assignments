@@ -61,9 +61,6 @@
 (define (lookup [s : Symbol] [env : Env]) : Value
   (cond
     [(empty? env) (error "DXUQ4 Unbound identifier:" s)]
-    [(cloV? (Binding-val (first env))) (begin
-                           (displayln "Checking cloV env")
-                           (displayln (cloV-env (Binding-val (first env)))))]
     [(equal? s (Binding-name (first env))) (Binding-val (first env))]
     [else (lookup s (rest env))]))
 
@@ -205,14 +202,7 @@
 (define (interp [a : ExprC] [env : Env]) : Value
   (match a
     [(numC n) (numV n)]
-    [(idC s) (begin
-               (displayln "LOOKUP IDC")
-               (displayln s)
-               (displayln env)
-               (displayln "LOOKUP RESULT")
-               (displayln (lookup s (reverse env)))
-               (displayln "--------------------------------------")
-               (lookup s (reverse env)))]
+    [(idC s) (lookup s (reverse env))]
     [(ifC a t f)
      (define temp (interp a env))
      (if (boolV? temp)
@@ -253,7 +243,7 @@
                                                    ['equal? (and val1 val2)])]
                                                 [else (error "DXUQ4 Couldn't apply primitive (not num or bool)")]))
                                             (error "DXUQ4 Couldn't apply primitive: incorrect number of arguments"))]))]
-    [(lamC args b) (begin (displayln env) (cloV args b env))]))
+    [(lamC args b) (cloV args b env)]))
 
 (check-equal? (interp (numC 4) mt-env) (numV 4))
 (check-equal? (interp (appC (idC '+) (list (numC 2) (numC 3))) top-env) (numV 5))
@@ -312,44 +302,22 @@
 (check-equal? (top-interp '((fn (z y) (+ z y)) (+ 9 14) 98)) "121")
 (check-equal? (top-interp (quote ((fn (+) (* + +)) 14))) "196")
 (check-equal? (top-interp (quasiquote (if (<= 4 3) 29387 true))) "true")
-;(check-equal? (top-interp (quote (let (f = (fn (x) x)) in (let (y = 9) in (f 3))))) "3")
-;(check-equal? (top-interp (quote (let (z = 9) in (let (y = 9) (x = 5) in (+ z x))))) "14")
-;(check-equal? (top-interp (quote (let (z = (fn () 3)) (q = 9) in (+ (z) q)))) "12")
-;(check-equal? (top-interp (quote (let (f = (fn (a b c d e) (+ (+ a b) (+ (- 0 c) (+ d e))))) in (f 10 9 8 7 6)))) "24")
-;(check-equal? (top-interp (quote (let (+ = -) (- = +) in (+ 3 (- 6 4))))) "-7")
-;(check-exn (regexp (regexp-quote "DXUQ4 inconsistent number of args"))
-;           (lambda () (top-interp '((fn () 9) 17))))
-;(check-exn (regexp (regexp-quote "DXUQ4 inconsistent number of args"))
-;           (lambda () (top-interp '(((fn () 3)) 4 5))))
-
+(check-equal? (top-interp (quote (let (f = (fn (x) x)) in (let (y = 9) in (f 3))))) "3")
+(check-equal? (top-interp (quote (let (z = 9) in (let (y = 9) (x = 5) in (+ z x))))) "14")
+(check-equal? (top-interp (quote (let (z = (fn () 3)) (q = 9) in (+ (z) q)))) "12")
+(check-equal? (top-interp (quote (let (f = (fn (a b c d e) (+ (+ a b) (+ (- 0 c) (+ d e))))) in (f 10 9 8 7 6)))) "24")
+(check-equal? (top-interp (quote (let (+ = -) (- = +) in (+ 3 (- 6 4))))) "-7")
+(check-exn (regexp (regexp-quote "DXUQ4 inconsistent number of args"))
+           (lambda () (top-interp '((fn () 9) 17))))
+(check-exn (regexp (regexp-quote "DXUQ4 inconsistent number of args"))
+           (lambda () (top-interp '(((fn () 3)) 4 5))))
 
 ; Testfail: while evaluating
 ; (top-interp (quote ((fn (seven) (seven)) ((fn (minus) (fn () (minus (+ 3 10) (* 2 3)))) (fn (x y) (+ x (* -1 y))))))):
 ;  DXUQ4 Unbound identifier
 
-(parse (quote ((fn (seven) (seven)) ((fn (minus) (fn () (minus (+ 3 10) (* 2 3)))) (fn (x y) (+ x (* -1 y)))))))
-(top-interp (quote ((fn (seven) (seven)) ((fn (minus) (fn () (minus (+ 3 10) (* 2 3)))) (fn (x y) (+ x (* -1 y)))))))
-
-(appC
- (lamC '(seven) (appC (idC 'seven) '()))
- (list
-  (appC
-   (lamC
-    '(minus)
-    (lamC
-     '()
-     (appC
-      (idC 'minus)
-      (list
-       (appC (idC '+) (list (numC 3) (numC 10)))
-       (appC (idC '*) (list (numC 2) (numC 3)))))))
-   (list
-    (lamC
-     '(x y)
-     (appC
-      (idC '+)
-      (list
-       (idC 'x)
-       (appC (idC '*) (list (numC -1) (idC 'y))))))))))
+;(parse (quote ((fn (seven) (seven)) ((fn (minus) (fn () (minus (+ 3 10) (* 2 3)))) (fn (x y) (+ x (* -1 y)))))))
+;(top-interp (quote ((fn (seven) (seven)) ((fn (minus) (fn () (minus (+ 3 10) (* 2 3)))) (fn (x y) (+ x (* -1 y)))))))
+;(top-interp `(3 4 5))
 
 "DONE"
