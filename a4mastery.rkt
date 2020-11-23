@@ -229,15 +229,15 @@
                                                    [val2 : Value (interp (first (rest (appC-args a))) env)])
                                               (cond
                                                 [(and (numV? val1) (numV? val2))
-                                                 (match (lookup (primV-s body) (reverse env))
-                                                   [(primV '+) (numV (+ (numV-n val1) (numV-n val2)))]
-                                                   [(primV '-) (numV (- (numV-n val1) (numV-n val2)))]
-                                                   [(primV '/) (numV (/ (numV-n val1) (if (zero? (numV-n val2))
+                                                 (match (primV-s body)
+                                                   ['+ (numV (+ (numV-n val1) (numV-n val2)))]
+                                                   ['- (numV (- (numV-n val1) (numV-n val2)))]
+                                                   ['/ (numV (/ (numV-n val1) (if (zero? (numV-n val2))
                                                                                   (error "DXUQ4 Division by zero")
                                                                                   (numV-n val2))))]
-                                                   [(primV '*) (numV (* (numV-n val1) (numV-n val2)))]
-                                                   [(primV '<=) (boolV (<= (numV-n val1) (numV-n val2)))]
-                                                   [(primV 'equal?) (boolV (= (numV-n val1) (numV-n val2)))])]
+                                                   ['* (numV (* (numV-n val1) (numV-n val2)))]
+                                                   ['<= (boolV (<= (numV-n val1) (numV-n val2)))]
+                                                   ['equal? (boolV (= (numV-n val1) (numV-n val2)))])]
                                                 [(and (boolV? val1) (boolV? val2))
                                                  (match (primV-s body)
                                                    ['equal? (and val1 val2)])]
@@ -303,22 +303,21 @@
 (check-equal? (top-interp (quote ((fn (+) (* + +)) 14))) "196")
 (check-equal? (top-interp (quasiquote (if (<= 4 3) 29387 true))) "true")
 (check-equal? (top-interp (quote (let (f = (fn (x) x)) in (let (y = 9) in (f 3))))) "3")
-;(check-equal? (top-interp (quote (let (+ = -) (- = +) in (+ 3 (- 6 4))))) "7")
+(check-equal? (top-interp (quote (let (z = 9) in (let (y = 9) (x = 5) in (+ z x))))) "14")
+(check-equal? (top-interp (quote (let (z = (fn () 3)) (q = 9) in (+ (z) q)))) "12")
+(check-equal? (top-interp (quote (let (f = (fn (a b c d e) (+ (+ a b) (+ (- 0 c) (+ d e))))) in (f 10 9 8 7 6)))) "24")
+(check-equal? (top-interp (quote (let (+ = -) (- = +) in (+ 3 (- 6 4))))) "-7")
 (check-exn (regexp (regexp-quote "DXUQ4 inconsistent number of args"))
            (lambda () (top-interp '((fn () 9) 17))))
 (check-exn (regexp (regexp-quote "DXUQ4 inconsistent number of args"))
            (lambda () (top-interp '(((fn () 3)) 4 5))))
 
-;(parse (quote ((fn (seven) (seven))
-;               ((fn (minus)
-;                    (fn () (minus (+ 3 10) (* 2 3))))
-;                (fn (x y) (+ x (* -1 y)))))))
 
-;(check-equal? (top-interp (quote ((fn (seven) (seven))
-;                                  ((fn (minus)
-;                                       (fn () (minus (+ 3 10) (* 2 3))))
-;                                   (fn (x y) (+ x (* -1 y))))))) "something")
+; Testfail: while evaluating
+; (top-interp (quote ((fn (seven) (seven)) ((fn (minus) (fn () (minus (+ 3 10) (* 2 3)))) (fn (x y) (+ x (* -1 y))))))):
+;  DXUQ4 Unbound identifier
 
-;(parse (quote (let (+ = -) (- = +) in (+ 3 (- 6 4)))))
+;(parse (quote ((fn (seven) (seven)) ((fn (minus) (fn () (minus (+ 3 10) (* 2 3)))) (fn (x y) (+ x (* -1 y)))))))
+;(top-interp (quote ((fn (seven) (seven)) ((fn (minus) (fn () (minus (+ 3 10) (* 2 3)))) (fn (x y) (+ x (* -1 y)))))))
 
 "DONE"
