@@ -21,8 +21,10 @@
 (struct lamC ([args : (Listof Symbol)]
               [body : ExprC])
   #:transparent)
+(struct stringC ([s : String])
+  #:transparent)
 
-(define-type ExprC (U numC ifC appC idC lamC))
+(define-type ExprC (U numC ifC appC idC lamC stringC))
 
 ;; Values
 (struct numV ([n : Real])
@@ -33,12 +35,46 @@
               [body : ExprC]
               [env : Env])
   #:transparent)
-(struct primV ([s : Symbol])
+(struct primV ([fun : (-> (Listof Value) Value)])
+  #:transparent)
+(struct stringV ([s : String])
   #:transparent)
 
-(define-type Value (U numV boolV cloV primV))
+(define-type Value (U numV boolV cloV primV stringV))
 
 ;; Environment
+(define (add [args : (Listof Value)]) : Value
+  (match args
+    [(list (? numV? a) (? numV? b)) (numV (+ (numV-n a) (numV-n b)))]
+    [else (error '+ "DXUQ4 Invalid arguments passed to +")]))
+
+(define (multiply [args : (Listof Value)]) : Value
+  (match args
+    [(list (? numV? a) (? numV? b)) (numV (* (numV-n a) (numV-n b)))]
+    [else (error '* "DXUQ4 Invalid arguments passed to *")]))
+
+(define (subtract [args : (Listof Value)]) : Value
+  (match args
+    [(list (? numV? a) (? numV? b)) (numV (- (numV-n a) (numV-n b)))]
+    [else (error '- "DXUQ4 Invalid arguments passed to -")]))
+
+(define (divide [args : (Listof Value)]) : Value
+  (match args
+    [(list (? numV? a) (? numV? b)) (if (= (numV-n b) 0)
+                                        (error '/ "DXUQ4 Division by zero")
+                                        (numV (/ (numV-n a) (numV-n b))))]
+    [else (error '/ "DXUQ4 Invalid arguments passed to /")]))
+
+(define (lte [args : (Listof Value)]) : Value
+  (match args
+    [(list (? numV? a) (? numV? b)) (boolV (<= (numV-n a) (numV-n b)))]
+    [else (error '<= "DXUQ4 Invalid arguments passed to <=")]))
+
+(define (myEqual [args : (Listof Value)]) : Value
+  (match args
+    [(list a b) (boolV (equal? a b))]
+    [else (error 'equal? "DXUQ4 Invalid arguments passed to equal?")]))
+
 (struct Binding ([name : Symbol]
                  [val : Value])
   #:transparent)
@@ -46,16 +82,16 @@
 (define-type Env (Listof Binding))
 
 (define mt-env empty)
-(define extend-env cons)
+(define extend-env cons)                                 
 (define top-env
   (list (Binding 'true (boolV #t))
         (Binding 'false (boolV #f))
-        (Binding '+ (primV '+))
-        (Binding '* (primV '*))
-        (Binding '- (primV '-))
-        (Binding '/ (primV '/))
-        (Binding '<= (primV '<=))
-        (Binding 'equal? (primV 'equal?))))
+        (Binding '+ (primV add))
+        (Binding '* (primV multiply))
+        (Binding '- (primV subtract))
+        (Binding '/ (primV divide))
+        (Binding '<= (primV lte))
+        (Binding 'equal? (primV myEqual))))
 
 ;; Get symbol from env
 (define (lookup [s : Symbol] [env : Env]) : Value
@@ -67,7 +103,7 @@
 (check-equal? (lookup 'a (list (Binding 'a (numV 4)))) (numV 4))
 (check-equal? (lookup 'b (list (Binding 'a (numV 4)) (Binding 'b (numV 5)))) (numV 5))
 (check-equal? (lookup 'true top-env) (boolV #t))
-(check-equal? (lookup '+ top-env) (primV '+))
+(check-equal? (lookup '+ top-env) (primV add))
 (check-exn (regexp (regexp-quote "DXUQ4 Unbound identifier"))
            (lambda () (lookup 'a '())))
 (check-exn (regexp (regexp-quote "DXUQ4 Unbound identifier"))
@@ -126,21 +162,24 @@
 (define (serialize [what : Value]) : String
   (match what
     [(numV n) (~v n)]
+    [(stringV s) s]
     [(boolV b) (if b "true" "false")]
     [(cloV a b e) "#<procedure>"]
     [(primV s) "#<primop>"]))
 
 (check-equal? (serialize (numV 4)) "4")
+(check-equal? (serialize (stringV "hello")) "hello")
 (check-equal? (serialize (boolV #t)) "true")
 (check-equal? (serialize (boolV #f)) "false")
 (check-equal? (serialize (cloV '() (numC 4) '())) "#<procedure>")
-(check-equal? (serialize (primV '+)) "#<primop>")
+(check-equal? (serialize (primV add)) "#<primop>")
 
 ;; Parse Sexp into DXUQ4 expression
 (define (parse [s : Sexp]) : ExprC
   (match s
     [(? real?) (numC s)]
     [(? symbol?) (check-id-name (cast s Symbol))]
+    [(? string?) (stringC s)]
     [(list 'if a b c) (ifC (parse a) (parse b) (parse c))]
     [(list 'fn (list (? symbol? args) ...) b)
      (check-lam (lamC (cast args (Listof Symbol)) (parse b)))]
@@ -150,7 +189,7 @@
                                        (map (λ (n) (parse n)) (cast d (Listof Sexp))))])]
     [(list a b ...)
      (check-app (appC (parse a) (map (λ ([x : Sexp]) (parse x)) b)))]
-    [_ (error "DXUQ4 Not a DXUQ4 expression")]))
+    [_ (error "DXUQ4 Not a DXUQ4 expression" s)]))
 
 (check-equal? (parse '1) (numC 1))
 (check-equal? (parse '(+ 1 2)) (appC (idC '+) (list (numC 1) (numC 2))))
@@ -203,46 +242,21 @@
   (match a
     [(numC n) (numV n)]
     [(idC s) (lookup s (reverse env))]
+    [(stringC s) (stringV s)]
     [(ifC a t f)
      (define temp (interp a env))
-     (if (boolV? temp)
+     (if (begin (displayln "TEMP: ----") (displayln temp) (boolV? temp))
          (if (boolV-b temp) (interp t env) (interp f env))
-         (error 'interpp "DXUQ4 isn't a boolean value"))]
-    [(appC f args) (let ([body : Value (match f
-                                         [(lamC lam-args lam-body) (if (= (length lam-args)
-                                                                          (length args))
-                                                                       (interp (appC-body a) (append env
-                                                                                (map (λ ([s : Symbol] [v : ExprC])                                                               
-                                                                                (Binding s (interp v env)))
-                                                                                 lam-args args)))
-                                                                       (error "DXUQ4 inconsistent number of args"))]
-                                         [(appC app-body app-args) (interp (appC (appC-body f) args) env)]
-                                         [_ (interp (appC-body a) env)])])               
-                     (match body
-                       [(? numV? body) body]
-                       [(? cloV? body) (interp (cloV-body body)
-                                               (append env (map (λ ([s : Symbol] [v : ExprC])                                                               
-                                                                  (Binding s (interp v env)))
-                                                                (cloV-args body) (appC-args a))))]
-                       [(? primV? body) (if (equal? (length (appC-args a)) 2)
-                                            (let* ([val1 : Value (interp (first (appC-args a)) env)]
-                                                   [val2 : Value (interp (first (rest (appC-args a))) env)])
-                                              (cond
-                                                [(and (numV? val1) (numV? val2))
-                                                 (match (primV-s body)
-                                                   ['+ (numV (+ (numV-n val1) (numV-n val2)))]
-                                                   ['- (numV (- (numV-n val1) (numV-n val2)))]
-                                                   ['/ (numV (/ (numV-n val1) (if (zero? (numV-n val2))
-                                                                                  (error "DXUQ4 Division by zero")
-                                                                                  (numV-n val2))))]
-                                                   ['* (numV (* (numV-n val1) (numV-n val2)))]
-                                                   ['<= (boolV (<= (numV-n val1) (numV-n val2)))]
-                                                   ['equal? (boolV (= (numV-n val1) (numV-n val2)))])]
-                                                [(and (boolV? val1) (boolV? val2))
-                                                 (match (primV-s body)
-                                                   ['equal? (and val1 val2)])]
-                                                [else (error "DXUQ4 Couldn't apply primitive (not num or bool)")]))
-                                            (error "DXUQ4 Couldn't apply primitive: incorrect number of arguments"))]))]
+         (error 'interp "DXUQ4 isn't a boolean value"))]
+    [(appC f args) (match (interp f env)
+                     [(cloV cloArgs cloBody cloEnv) (if (equal? (length args) (length cloArgs))
+                                                        (interp cloBody
+                                                                (append cloEnv (map (λ ([s : Symbol] [v : ExprC])                                                               
+                                                                                      (Binding s (interp v env)))
+                                                                                    cloArgs args)))
+                                                        (error 'interp "DXUQ4 Inconsistent number of args"))]
+                     [(primV f) (f (map (λ ([x : ExprC]) (interp x env)) args))]
+                     [else (error "DXUQ4 Can't apply function" f)])]
     [(lamC args b) (cloV args b env)]))
 
 (check-equal? (interp (numC 4) mt-env) (numV 4))
@@ -258,11 +272,7 @@
                                              (list (numC 1) (numC 1)))
                                        (appC (idC '<=) (list (numC 1) (numC 1)))))
                            (numC 2) (numC 3)) top-env) (numV 2))
-(check-exn (regexp (regexp-quote "DXUQ4 Couldn't apply primitive (not num or bool)"))
-           (lambda () (interp (ifC (appC (idC 'equal?) (list (numC 3)
-                                                             (appC (idC '<=) (list (numC 1) (numC 1)))))
-                                   (numC 2) (numC 3)) top-env)))
-(check-exn (regexp (regexp-quote "DXUQ4 Couldn't apply primitive: incorrect number of arguments"))
+(check-exn (regexp (regexp-quote "DXUQ4 Invalid arguments passed to equal?"))
            (lambda () (interp (ifC (appC (idC 'equal?) (list (appC (idC '<=)
                                                                    (list (numC 1) (numC 1)))
                                                              (appC (idC '<=) (list (numC 1) (numC 1)))
@@ -282,9 +292,9 @@
                            (numC 3)) top-env) (numV 1))
 
 (check-equal? (interp (appC (lamC '() (appC (idC '+) (list (numC 2) (numC 1)))) '()) top-env) (numV 3))
-(check-equal? (interp (appC (lamC '(a b) (appC (appC (idC '+) (list (idC 'a) (idC 'b))) (list (idC 'a) (idC 'b))))
+(check-equal? (interp (appC (lamC '(a b) (appC (idC '+) (list (idC 'a) (idC 'b))))
                             (list (numC 1) (numC 2))) top-env) (numV 3))
-(check-equal? (interp (appC (lamC '(a b) (appC (appC (idC '+) (list (idC 'a) (idC 'b))) (list (idC 'a) (idC 'b))))
+(check-equal? (interp (appC (lamC '(a b) (appC (idC '+) (list (idC 'a) (idC 'b))))
                             (list (appC (idC '+) (list (numC 2) (numC 1))) (numC 2))) top-env) (numV 5))
 
 (check-exn (regexp (regexp-quote "DXUQ4 Unbound identifier"))
@@ -293,6 +303,19 @@
            (lambda () (interp (appC (idC '/) (list (numC 2) (numC 0))) top-env)))
 (check-exn (regexp (regexp-quote "DXUQ4 Division by zero"))
            (lambda () (interp (appC (idC '/) (list (numC 4) (appC (idC '-) (list (numC 1) (numC 1))))) top-env)))
+
+(check-exn (regexp (regexp-quote "DXUQ4 Invalid arguments passed to +"))
+           (lambda () (interp (appC (idC '+) (list (numC 4) (numC 1) (numC 3))) top-env)))
+(check-exn (regexp (regexp-quote "DXUQ4 Invalid arguments passed to -"))
+           (lambda () (interp (appC (idC '-) (list (numC 4) (numC 1) (numC 3))) top-env)))
+(check-exn (regexp (regexp-quote "DXUQ4 Invalid arguments passed to /"))
+           (lambda () (interp (appC (idC '/) (list (numC 4) (numC 1) (numC 3))) top-env)))
+(check-exn (regexp (regexp-quote "DXUQ4 Invalid arguments passed to *"))
+           (lambda () (interp (appC (idC '*) (list (numC 4) (numC 1) (numC 3))) top-env)))
+(check-exn (regexp (regexp-quote "DXUQ4 Invalid arguments passed to <="))
+           (lambda () (interp (appC (idC '<=) (list (numC 4) (numC 1) (numC 3))) top-env)))
+(check-exn (regexp (regexp-quote "DXUQ4 Invalid arguments passed to equal?"))
+           (lambda () (interp (appC (idC 'equal?) (list (numC 4) (numC 1) (numC 3))) top-env)))
 
 ;; Parse and interpret DXUQ4-formatted Sexp
 (define (top-interp [s : Sexp]) : String
@@ -307,17 +330,14 @@
 (check-equal? (top-interp (quote (let (z = (fn () 3)) (q = 9) in (+ (z) q)))) "12")
 (check-equal? (top-interp (quote (let (f = (fn (a b c d e) (+ (+ a b) (+ (- 0 c) (+ d e))))) in (f 10 9 8 7 6)))) "24")
 (check-equal? (top-interp (quote (let (+ = -) (- = +) in (+ 3 (- 6 4))))) "-7")
-(check-exn (regexp (regexp-quote "DXUQ4 inconsistent number of args"))
+(check-equal? (top-interp (quote ((fn (seven) (seven))
+                                  ((fn (minus) (fn () (minus (+ 3 10) (* 2 3)))) (fn (x y) (+ x (* -1 y))))))) "7")
+(check-exn (regexp (regexp-quote "DXUQ4 Inconsistent number of args"))
            (lambda () (top-interp '((fn () 9) 17))))
-(check-exn (regexp (regexp-quote "DXUQ4 inconsistent number of args"))
+(check-exn (regexp (regexp-quote "DXUQ4 Can't apply function"))
            (lambda () (top-interp '(((fn () 3)) 4 5))))
 
-; Testfail: while evaluating
-; (top-interp (quote ((fn (seven) (seven)) ((fn (minus) (fn () (minus (+ 3 10) (* 2 3)))) (fn (x y) (+ x (* -1 y))))))):
-;  DXUQ4 Unbound identifier
-
-;(parse (quote ((fn (seven) (seven)) ((fn (minus) (fn () (minus (+ 3 10) (* 2 3)))) (fn (x y) (+ x (* -1 y)))))))
-;(top-interp (quote ((fn (seven) (seven)) ((fn (minus) (fn () (minus (+ 3 10) (* 2 3)))) (fn (x y) (+ x (* -1 y)))))))
-;(top-interp `(3 4 5))
+;(top-interp (quote ((fn (empty) ((fn (cons) ((fn (empty?) ((fn (first) ((fn (rest) ((fn (Y) ((fn (length) ((fn (addup) (addup (cons 3 (cons 17 empty)))) (Y (fn (addup) (fn (l) (if (empty? l) 0 (+ (first l) (addup (rest l))))))))) (Y (fn (length) (fn (l) (if (empty? l) 0 (+ 1 (length (rest l))))))))) ((fn (x) (fn (y) (y (fn (z) (((x x) y) z))))) (fn (x) (fn (y) (y (fn (z) (((x x) y) z)))))))) (fn (l) (l false)))) (fn (l) (l true)))) (fn (l) (equal? l empty)))) (fn (a b) (fn (select) (if select a b))))) 13)))
+;(top-interp (quote (if (fn () (fn () ((fn () (let (a = (fn () (if (((let (/ = ((if (let (- = (let (+ = (if (if true (fn (true false null +) false) (fn (- * /) "Hello")) (null (fn (equal? <=) 0) ("World" (let (true = +) in (1 (if "" (let (false = "Hello") in (let (null = -1) in (if 2.2 (if (let in "") - ((((let in /) -22/7) "World") *)) (let in 0)))) (if (let in (fn (a) (if (if <= a -1) 1 "World"))) "Hello" equal?)) b)) c d) e f) g)) in h)) (* = i) in j) k l))) (equal? = m) (<= = n) in o))) p q))) (b = r) (c = s) (d = t) in u))))) v w)))
 
 "DONE"
