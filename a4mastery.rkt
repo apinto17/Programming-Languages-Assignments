@@ -198,10 +198,11 @@
     [(list 'let a ... 'in b)
      (match (cast a (Listof Sexp))
        [(list (list c '= d) ...) (appC (check-lam (lamC (cast c (Listof Symbol)) (parse b)))
-                                       (map (λ (n) (parse n)) (cast d (Listof Sexp))))])]
+                                       (map (λ (n) (parse n)) (cast d (Listof Sexp))))]
+       [_ (error "DXUQ4 Not a valid let expression ~e" s)])]
     [(list a b ...)
      (check-app (appC (parse a) (map (λ ([x : Sexp]) (parse x)) b)))]
-    [_ (error "DXUQ4 Not a DXUQ4 expression" s)]))
+    [_ (error "DXUQ4 Not a DXUQ4 expression ~e" s)]))
 
 (check-equal? (parse '1) (numC 1))
 (check-equal? (parse '(+ 1 2)) (appC (idC '+) (list (numC 1) (numC 2))))
@@ -248,6 +249,8 @@
            (lambda () (parse '(parse '(fn (x x) 3)))))
 (check-exn (regexp (regexp-quote "DXUQ4 Not a DXUQ4 expression"))
            (lambda () (parse '((((((())))))))))
+(check-exn (regexp (regexp-quote "DXUQ4 Not a valid let expression"))
+           (lambda () (parse '(let ((fn = "")) in "World"))))
 
 ;; Interpret DXUQ4 expressions
 (define (interp [a : ExprC] [env : Env]) : Value
@@ -257,7 +260,7 @@
     [(stringC s) (stringV s)]
     [(ifC a t f)
      (define exp (interp a env))
-     (if (begin (displayln "TEMP: ----") (displayln exp) (boolV? exp))
+     (if (boolV? exp)
          (if (boolV-b exp) (interp t env) (interp f env))
          (error 'interp "DXUQ4 isn't a boolean value ~e" exp))]
     [(appC f args) (match (interp f env)
@@ -271,6 +274,7 @@
                      [else (error "DXUQ4 Can't apply function" f)])]
     [(lamC args b) (cloV args b env)]))
 
+(check-equal? (interp (stringC "hello") mt-env) (stringV "hello"))
 (check-equal? (interp (numC 4) mt-env) (numV 4))
 (check-equal? (interp (appC (idC '+) (list (numC 2) (numC 3))) top-env) (numV 5))
 (check-equal? (interp (appC (idC '-) (list (numC 2) (numC 3))) top-env) (numV -1))
@@ -333,6 +337,7 @@
 (define (top-interp [s : Sexp]) : String
   (serialize (interp (parse s) top-env)))
 
+(check-equal? (top-interp '(if (equal? "hello" "hello") "world" "oops")) "world")
 (check-equal? (top-interp '(if (equal? 1 0) (* 1 1) 3)) "3")
 (check-equal? (top-interp '((fn (z y) (+ z y)) (+ 9 14) 98)) "121")
 (check-equal? (top-interp (quote ((fn (+) (* + +)) 14))) "196")
@@ -348,9 +353,5 @@
            (lambda () (top-interp '((fn () 9) 17))))
 (check-exn (regexp (regexp-quote "DXUQ4 Can't apply function"))
            (lambda () (top-interp '(((fn () 3)) 4 5))))
-
-;(top-interp (quote ((fn (empty) ((fn (cons) ((fn (empty?) ((fn (first) ((fn (rest) ((fn (Y) ((fn (length) ((fn (addup) (addup (cons 3 (cons 17 empty)))) (Y (fn (addup) (fn (l) (if (empty? l) 0 (+ (first l) (addup (rest l))))))))) (Y (fn (length) (fn (l) (if (empty? l) 0 (+ 1 (length (rest l))))))))) ((fn (x) (fn (y) (y (fn (z) (((x x) y) z))))) (fn (x) (fn (y) (y (fn (z) (((x x) y) z)))))))) (fn (l) (l false)))) (fn (l) (l true)))) (fn (l) (equal? l empty)))) (fn (a b) (fn (select) (if select a b))))) 13)))
-(top-interp (quote (if (fn () (fn () ((fn () (let (a = (fn () (if (((let (/ = ((if (let (- = (let (+ = (if (if true (fn (true false null +) false) (fn (- * /) "Hello")) (null (fn (equal? <=) 0) ("World" (let (true = +) in (1 (if "" (let (false = "Hello") in (let (null = -1) in (if 2.2 (if (let in "") - ((((let in /) -22/7) "World") *)) (let in 0)))) (if (let in (fn (a) (if (if <= a -1) 1 "World"))) "Hello" equal?)) b)) c d) e f) g)) in h)) (* = i) in j) k l))) (equal? = m) (<= = n) in o))) p q))) (b = r) (c = s) (d = t) in u))))) v w)))
-
 
 "DONE"
