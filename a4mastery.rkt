@@ -4,6 +4,8 @@
 
 ;; DXUQ4 Language
 
+;; --------------------- Data Definitions -------------------------
+
 ;; Numbers and Operations
 (struct numC ([n : Real])
   #:transparent)
@@ -42,7 +44,7 @@
 
 (define-type Value (U numV boolV cloV primV stringV))
 
-;; Environment
+;; binary operations
 (define (add [args : (Listof Value)]) : Value
   (match args
     [(list (? numV? a) (? numV? b)) (numV (+ (numV-n a) (numV-n b)))]
@@ -79,10 +81,10 @@
                  [val : Value])
   #:transparent)
 
+;; Environment
 (define-type Env (Listof Binding))
 
-(define mt-env empty)
-(define extend-env cons)                                 
+(define mt-env empty)                              
 (define top-env
   (list (Binding 'true (boolV #t))
         (Binding 'false (boolV #f))
@@ -93,21 +95,15 @@
         (Binding '<= (primV lte))
         (Binding 'equal? (primV myEqual))))
 
+
+;; ------------------------ Functions ----------------------
+
 ;; Get symbol from env
 (define (lookup [s : Symbol] [env : Env]) : Value
   (cond
     [(empty? env) (error "DXUQ4 Unbound identifier:" s)]
     [(equal? s (Binding-name (first env))) (Binding-val (first env))]
     [else (lookup s (rest env))]))
-
-(check-equal? (lookup 'a (list (Binding 'a (numV 4)))) (numV 4))
-(check-equal? (lookup 'b (list (Binding 'a (numV 4)) (Binding 'b (numV 5)))) (numV 5))
-(check-equal? (lookup 'true top-env) (boolV #t))
-(check-equal? (lookup '+ top-env) (primV add))
-(check-exn (regexp (regexp-quote "DXUQ4 Unbound identifier"))
-           (lambda () (lookup 'a '())))
-(check-exn (regexp (regexp-quote "DXUQ4 Unbound identifier"))
-           (lambda () (lookup 'a (list (Binding 'b (numV 4))))))
 
 ;; Make sure id name is valid
 (define (check-id-name [s : Symbol]) : idC
@@ -118,28 +114,12 @@
     [(symbol=? 'let s) (error "DXUQ4 Invalid identifier name:" s)]
     [else (idC s)]))
 
-(check-equal? (check-id-name 'x) (idC 'x))
-(check-equal? (check-id-name 'something) (idC 'something))
-(check-exn (regexp (regexp-quote "DXUQ4 Invalid identifier name"))
-           (lambda () (check-id-name 'fn)))
-(check-exn (regexp (regexp-quote "DXUQ4 Invalid identifier name"))
-           (lambda () (check-id-name 'if)))
-(check-exn (regexp (regexp-quote "DXUQ4 Invalid identifier name"))
-           (lambda () (check-id-name 'in)))
-(check-exn (regexp (regexp-quote "DXUQ4 Invalid identifier name"))
-           (lambda () (check-id-name 'let)))
-
 ;; Check the args for a lambda and make sure invalid symbols are rejected
 (define (check-id-name-lam [lam-args : (Listof Symbol)]): Boolean
   (cond
     [(empty? lam-args) #t] 
     [(equal? (length lam-args) 1) (idC? (check-id-name (first lam-args)))]
     [else (and (check-id-name (first lam-args)) (check-id-name-lam (rest lam-args)))]))
-
-(check-equal? (check-id-name-lam '(a b c)) #t)
-(check-exn (regexp (regexp-quote "DXUQ4 Invalid identifier name"))
-           (lambda () (check-id-name-lam '(a let c))))
-(check-equal? (check-id-name-lam '(a a)) #t)
 
 ;; Ensure argument's name is unique 
 (define (check-dup-symbol [in : (Listof Symbol)]) : Boolean
@@ -148,23 +128,11 @@
     [else (if (> (length (filter (λ ([x : Symbol]) (equal? (first in) x)) in)) 1)
               #f #t)]))
 
-(check-equal? (check-dup-symbol '()) #t)
-(check-equal? (check-dup-symbol '(a b c)) #t)
-(check-equal? (check-dup-symbol '(a b c d e f)) #t)
-(check-equal? (check-dup-symbol '(a a)) #f)
-(check-equal? (check-dup-symbol '(a b c d a)) #f)
-
 ;; Check validity of lamC's
 (define (check-lam [lam : lamC]) : lamC
   (if (and (check-id-name-lam (lamC-args lam)) (check-dup-symbol (lamC-args lam)))
       lam
       (error "DXUQ4 Duplicate identifier name ~e" lam)))
-
-(check-equal? (check-lam (lamC '() (numC 4))) (lamC '() (numC 4)))
-(check-equal? (check-lam (lamC '(a) (numC 4))) (lamC '(a) (numC 4)))
-(check-equal? (check-lam (lamC '(a b c) (numC 4))) (lamC '(a b c) (numC 4)))
-(check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
-           (lambda () (check-lam (lamC '(a b a) (numC 4)))))
 
 ;; Check validity of appC's 
 (define (check-app [app : appC]) : appC
@@ -178,13 +146,6 @@
     [(boolV b) (if b "true" "false")]
     [(cloV a b e) "#<procedure>"]
     [(primV s) "#<primop>"]))
-
-(check-equal? (serialize (numV 4)) "4")
-(check-equal? (serialize (stringV "hello")) "hello")
-(check-equal? (serialize (boolV #t)) "true")
-(check-equal? (serialize (boolV #f)) "false")
-(check-equal? (serialize (cloV '() (numC 4) '())) "#<procedure>")
-(check-equal? (serialize (primV add)) "#<primop>")
 
 ;; Parse Sexp into DXUQ4 expression
 (define (parse [s : Sexp]) : ExprC
@@ -204,6 +165,88 @@
      (check-app (appC (parse a) (map (λ ([x : Sexp]) (parse x)) b)))]
     [_ (error "DXUQ4 Not a DXUQ4 expression ~e" s)]))
 
+;; Interpret DXUQ4 expressions
+(define (interp [a : ExprC] [env : Env]) : Value
+  (match a
+    [(numC n) (numV n)]
+    [(idC s) (lookup s env)]
+    [(stringC s) (stringV s)]
+    [(ifC a t f)
+     (define exp (interp a env))
+     (if (boolV? exp)
+         (if (boolV-b exp) (interp t env) (interp f env))
+         (error 'interp "DXUQ4 isn't a boolean value ~e" exp))]
+    [(appC f args) (match (interp f env)
+                     [(cloV cloArgs cloBody cloEnv) (if (equal? (length args) (length cloArgs))
+                                                        (interp cloBody
+                                                                (append (map (λ ([s : Symbol] [v : ExprC])                                                               
+                                                                                      (Binding s (interp v env)))
+                                                                                    cloArgs args) cloEnv))
+                                                        (error 'interp "DXUQ4 Inconsistent number of args ~e" args))]
+                     [(primV f) (f (map (λ ([x : ExprC]) (interp x env)) args))]
+                     [else (error "DXUQ4 Can't apply function" f)])]
+    [(lamC args b) (cloV args b env)]))
+
+;; Parse and interpret DXUQ4-formatted Sexp
+(define (top-interp [s : Sexp]) : String
+  (serialize (interp (parse s) top-env)))
+
+
+
+;; ------------------------------ test cases -----------------------
+
+
+;; lookup
+(check-equal? (lookup 'a (list (Binding 'a (numV 4)))) (numV 4))
+(check-equal? (lookup 'b (list (Binding 'a (numV 4)) (Binding 'b (numV 5)))) (numV 5))
+(check-equal? (lookup 'true top-env) (boolV #t))
+(check-equal? (lookup '+ top-env) (primV add))
+(check-exn (regexp (regexp-quote "DXUQ4 Unbound identifier"))
+           (lambda () (lookup 'a '())))
+(check-exn (regexp (regexp-quote "DXUQ4 Unbound identifier"))
+           (lambda () (lookup 'a (list (Binding 'b (numV 4))))))
+
+;; check-id-name
+(check-equal? (check-id-name 'x) (idC 'x))
+(check-equal? (check-id-name 'something) (idC 'something))
+(check-exn (regexp (regexp-quote "DXUQ4 Invalid identifier name"))
+           (lambda () (check-id-name 'fn)))
+(check-exn (regexp (regexp-quote "DXUQ4 Invalid identifier name"))
+           (lambda () (check-id-name 'if)))
+(check-exn (regexp (regexp-quote "DXUQ4 Invalid identifier name"))
+           (lambda () (check-id-name 'in)))
+(check-exn (regexp (regexp-quote "DXUQ4 Invalid identifier name"))
+           (lambda () (check-id-name 'let)))
+
+;; check-id-name-lam
+(check-equal? (check-id-name-lam '(a b c)) #t)
+(check-exn (regexp (regexp-quote "DXUQ4 Invalid identifier name"))
+           (lambda () (check-id-name-lam '(a let c))))
+(check-equal? (check-id-name-lam '(a a)) #t)
+
+;; check-dup-symbol
+(check-equal? (check-dup-symbol '()) #t)
+(check-equal? (check-dup-symbol '(a b c)) #t)
+(check-equal? (check-dup-symbol '(a b c d e f)) #t)
+(check-equal? (check-dup-symbol '(a a)) #f)
+(check-equal? (check-dup-symbol '(a b c d a)) #f)
+
+;; check-lam
+(check-equal? (check-lam (lamC '() (numC 4))) (lamC '() (numC 4)))
+(check-equal? (check-lam (lamC '(a) (numC 4))) (lamC '(a) (numC 4)))
+(check-equal? (check-lam (lamC '(a b c) (numC 4))) (lamC '(a b c) (numC 4)))
+(check-exn (regexp (regexp-quote "DXUQ4 Duplicate identifier name"))
+           (lambda () (check-lam (lamC '(a b a) (numC 4)))))
+
+;; serialize
+(check-equal? (serialize (numV 4)) "4")
+(check-equal? (serialize (stringV "hello")) "hello")
+(check-equal? (serialize (boolV #t)) "true")
+(check-equal? (serialize (boolV #f)) "false")
+(check-equal? (serialize (cloV '() (numC 4) '())) "#<procedure>")
+(check-equal? (serialize (primV add)) "#<primop>")
+
+;; parse
 (check-equal? (parse '1) (numC 1))
 (check-equal? (parse '(+ 1 2)) (appC (idC '+) (list (numC 1) (numC 2))))
 (check-equal? (parse '(- 2 1)) (appC (idC '-) (list (numC 2) (numC 1))))
@@ -252,28 +295,7 @@
 (check-exn (regexp (regexp-quote "DXUQ4 Not a valid let expression"))
            (lambda () (parse '(let ((fn = "")) in "World"))))
 
-;; Interpret DXUQ4 expressions
-(define (interp [a : ExprC] [env : Env]) : Value
-  (match a
-    [(numC n) (numV n)]
-    [(idC s) (lookup s env)]
-    [(stringC s) (stringV s)]
-    [(ifC a t f)
-     (define exp (interp a env))
-     (if (boolV? exp)
-         (if (boolV-b exp) (interp t env) (interp f env))
-         (error 'interp "DXUQ4 isn't a boolean value ~e" exp))]
-    [(appC f args) (match (interp f env)
-                     [(cloV cloArgs cloBody cloEnv) (if (equal? (length args) (length cloArgs))
-                                                        (interp cloBody
-                                                                (append (map (λ ([s : Symbol] [v : ExprC])                                                               
-                                                                                      (Binding s (interp v env)))
-                                                                                    cloArgs args) cloEnv))
-                                                        (error 'interp "DXUQ4 Inconsistent number of args"))]
-                     [(primV f) (f (map (λ ([x : ExprC]) (interp x env)) args))]
-                     [else (error "DXUQ4 Can't apply function" f)])]
-    [(lamC args b) (cloV args b env)]))
-
+;; interp
 (check-equal? (interp (stringC "hello") mt-env) (stringV "hello"))
 (check-equal? (interp (numC 4) mt-env) (numV 4))
 (check-equal? (interp (appC (idC '+) (list (numC 2) (numC 3))) top-env) (numV 5))
@@ -333,10 +355,7 @@
 (check-exn (regexp (regexp-quote "DXUQ4 Invalid arguments passed to equal?"))
            (lambda () (interp (appC (idC 'equal?) (list (numC 4) (numC 1) (numC 3))) top-env)))
 
-;; Parse and interpret DXUQ4-formatted Sexp
-(define (top-interp [s : Sexp]) : String
-  (serialize (interp (parse s) top-env)))
-
+;; top-interp
 (check-equal? (top-interp '(if (equal? "hello" "hello") "world" "oops")) "world")
 (check-equal? (top-interp '(if (equal? 1 0) (* 1 1) 3)) "3")
 (check-equal? (top-interp '((fn (z y) (+ z y)) (+ 9 14) 98)) "121")
